@@ -305,6 +305,7 @@ async function connectMuse() {
   if (S.connected) { disconnectMuse(); return; }
   if (S.demo) stopDemo();
   setStatus('Scanning…');
+  let step = 'requestDevice';
   try {
     const device = await navigator.bluetooth.requestDevice({
       filters: [{ namePrefix: 'Muse' }],
@@ -313,20 +314,26 @@ async function connectMuse() {
     S.device = device;
     device.addEventListener('gattserverdisconnected', onDisconnect);
     setStatus('Connecting…');
+    step = 'gatt.connect';
     const server = await device.gatt.connect();
     S.server = server;
     setStatus('Starting EEG stream…');
+    step = 'getPrimaryService';
     const service = await server.getPrimaryService(MUSE_SERVICE);
+    step = 'getCharacteristic(control)';
     S.ctrlChar = await service.getCharacteristic(CHAR_CTRL);
     for (const sensor of SENSORS) {
+      step = 'getCharacteristic(' + sensor + ')';
       const ch = await service.getCharacteristic(CHAR_EEG[sensor]);
       ch.addEventListener('characteristicvaluechanged', (e) => onEEG(sensor, e));
+      step = 'startNotifications(' + sensor + ')';
       await ch.startNotifications();
     }
-    // Muse 2016 preset, then start data
-    await S.ctrlChar.writeValue(museCmd('p20'));
-    await delay(100);
-    await S.ctrlChar.writeValue(museCmd('d'));
+    // Same start sequence as muse-js: halt, preset, start, resume
+    step = 'write h';  await S.ctrlChar.writeValue(museCmd('h')); await delay(100);
+    step = 'write p21'; await S.ctrlChar.writeValue(museCmd('p21')); await delay(100);
+    step = 'write s';  await S.ctrlChar.writeValue(museCmd('s')); await delay(100);
+    step = 'write d';  await S.ctrlChar.writeValue(museCmd('d'));
     S.connected = true; S.streaming = true; S.demo = false;
     setStatus('Connected: ' + device.name);
     document.getElementById('electrode-grid').classList.remove('hidden');
@@ -337,8 +344,14 @@ async function connectMuse() {
     startCalibration();
     showScreen('monitor');
   } catch (e) {
-    if (e.name === 'NotFoundError') setStatus('Scan cancelled.');
-    else setStatus('Error: ' + e.message);
+    console.error('connectMuse failed at', step, e);
+    let msg;
+    if (e == null) msg = String(e);
+    else if (typeof e === 'string') msg = e;
+    else msg = [e.name, e.message].filter(Boolean).join(': ') || (() => { try { return JSON.stringify(e); } catch (_) { return String(e); } })();
+    if (e && e.name === 'NotFoundError') setStatus('Scan cancelled.');
+    else setStatus('Error at <b>' + esc(step) + '</b>:<br>' + esc(msg || '(empty error)'));
+    try { if (S.device && S.device.gatt.connected) S.device.gatt.disconnect(); } catch (_) {}
   }
 }
 
