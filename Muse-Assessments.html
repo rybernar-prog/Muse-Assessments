@@ -1,0 +1,1013 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover, user-scalable=no">
+<title>Muse EEG Lab</title>
+<style>
+*{margin:0;padding:0;box-sizing:border-box}
+:root{
+--bg:#0a0a0a;--s1:#141414;--s2:#1e1e1e;--s3:#282828;
+--tx:#e0e0e0;--tx2:#888;--tx3:#555;--brd:#2a2a2a;
+--accent:#3dff9a;--danger:#ff4d6d;--warn:#ffd84a;
+--delta:#8a6bff;--theta:#00d4ff;--alpha:#3dff9a;--beta:#ffd84a;--gamma:#ff4d6d;
+}
+html,body{height:100%;background:var(--bg);color:var(--tx);
+font-family:-apple-system,system-ui,sans-serif;overflow:hidden;
+touch-action:manipulation;-webkit-user-select:none;user-select:none}
+#app{display:flex;flex-direction:column;height:100%;height:100dvh;
+padding-top:env(safe-area-inset-top)}
+#header{display:flex;align-items:center;justify-content:space-between;
+padding:8px 16px;background:var(--s1);border-bottom:1px solid var(--brd);font-size:14px;color:var(--tx2)}
+#hdr-title{font-weight:600;color:var(--tx)}
+.screen{display:none;flex:1;overflow-y:auto}
+.screen.active{display:flex;flex-direction:column}
+#tab-bar{display:flex;background:var(--s1);border-top:1px solid var(--brd);
+padding-bottom:env(safe-area-inset-bottom)}
+.tab{flex:1;padding:8px 0 4px;text-align:center;color:var(--tx3);font-size:10px;cursor:pointer;transition:color .2s}
+.tab.active{color:var(--accent)}
+.tab-icon{font-size:20px;display:block;margin-bottom:2px}
+.connect-hero{flex:1;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:16px;padding:32px}
+.muse-icon{font-size:64px;opacity:.6}
+.btn-primary{padding:14px 32px;border-radius:12px;background:var(--accent);color:#000;
+font-size:16px;font-weight:600;border:none;cursor:pointer;transition:transform .1s,opacity .2s}
+.btn-primary:active{transform:scale(.96)}
+.btn-primary:disabled{opacity:.4;cursor:not-allowed}
+.btn-secondary{padding:10px 24px;border-radius:10px;background:var(--s2);color:var(--tx2);
+font-size:14px;border:1px solid var(--brd);cursor:pointer}
+#connect-status{font-size:14px;color:var(--tx2);text-align:center;max-width:300px;line-height:1.4}
+.electrode-grid{display:flex;justify-content:center;gap:24px;padding:16px;margin-top:8px}
+.electrode{text-align:center;font-size:11px;color:var(--tx2)}
+.electrode-dot{width:14px;height:14px;border-radius:50%;background:var(--tx3);margin:0 auto 4px;transition:background .3s}
+.electrode-dot.good{background:var(--accent)}.electrode-dot.ok{background:var(--warn)}.electrode-dot.bad{background:var(--danger)}
+.score-section{padding:16px;text-align:center}
+#score-value{font-size:72px;font-weight:700;line-height:1;font-variant-numeric:tabular-nums;transition:color .5s;color:var(--tx3)}
+#score-label{font-size:14px;color:var(--tx2);margin-top:4px}
+#wave-canvas{width:100%;flex:1;min-height:120px;display:block}
+.band-section{padding:8px 16px 12px}
+.band-row{display:flex;align-items:center;gap:8px;margin-bottom:4px;font-size:11px}
+.band-label{width:14px;text-align:center;font-weight:600}
+.band-name{width:36px;color:var(--tx2);font-size:10px}
+.band-bar-bg{flex:1;height:8px;background:var(--s2);border-radius:4px;overflow:hidden}
+.band-bar{height:100%;border-radius:4px;transition:width .3s ease;min-width:2px}
+.band-pct{width:32px;text-align:right;color:var(--tx2);font-size:10px;font-variant-numeric:tabular-nums}
+#btn-record{position:absolute;bottom:70px;right:16px;width:48px;height:48px;border-radius:50%;
+background:var(--danger);color:#fff;border:none;font-size:20px;cursor:pointer;
+box-shadow:0 2px 8px rgba(0,0,0,.4);transition:transform .1s,background .3s}
+#btn-record:active{transform:scale(.9)}
+#btn-record.recording{background:var(--tx3);animation:pulse 1.5s infinite}
+@keyframes pulse{0%,100%{opacity:1}50%{opacity:.5}}
+.protocol-list{padding:16px;display:flex;flex-direction:column;gap:12px}
+.proto-card{padding:16px;background:var(--s1);border-radius:12px;border:1px solid var(--brd);cursor:pointer;transition:border-color .2s}
+.proto-card:active{border-color:var(--accent)}
+.proto-card h3{font-size:15px;margin-bottom:4px}
+.proto-card p{font-size:12px;color:var(--tx2)}
+.protocol-runner{flex:1;display:flex;flex-direction:column;align-items:center;justify-content:center;
+padding:24px;text-align:center;gap:10px}
+#phase-name{font-size:20px;font-weight:600}
+#phase-instruction{font-size:14px;color:var(--tx2);max-width:300px;line-height:1.4;white-space:pre-line}
+#phase-timer{font-size:56px;font-weight:700;font-variant-numeric:tabular-nums}
+#phase-progress{width:100%;max-width:300px;height:4px;background:var(--s2);border-radius:2px;overflow:hidden;margin-top:8px}
+#phase-progress-fill{height:100%;background:var(--accent);border-radius:2px;transition:width .5s linear}
+#phase-counter{font-size:12px;color:var(--tx3)}
+#proto-score-value{font-size:48px;font-weight:700;margin-top:4px;font-variant-numeric:tabular-nums;color:var(--tx3)}
+#proto-stop{margin-top:12px;padding:10px 24px;background:var(--danger);color:#fff;border:none;border-radius:10px;font-size:14px;cursor:pointer}
+#reading-pane{margin-top:12px;padding:12px 16px;background:var(--s1);border-radius:8px;font-size:13px;
+color:var(--tx2);line-height:1.5;max-width:340px;max-height:180px;overflow-y:auto;text-align:left;
+-webkit-user-select:text;user-select:text}
+.export-list{padding:16px;display:flex;flex-direction:column;gap:12px}
+.session-card{padding:16px;background:var(--s1);border-radius:12px;border:1px solid var(--brd)}
+.session-card h3{font-size:14px;margin-bottom:4px}
+.session-card p{font-size:12px;color:var(--tx2);margin-bottom:8px}
+.export-btns{display:flex;gap:8px;flex-wrap:wrap}
+.btn-export{padding:6px 12px;border-radius:8px;background:var(--s2);color:var(--tx);
+border:1px solid var(--brd);font-size:12px;cursor:pointer}
+.btn-export:active{background:var(--s3)}
+.empty-state{flex:1;display:flex;align-items:center;justify-content:center;color:var(--tx3);font-size:14px;padding:40px}
+.hidden{display:none!important}
+#toast{position:fixed;bottom:80px;left:50%;transform:translateX(-50%) translateY(100px);
+background:var(--s3);color:var(--tx);padding:10px 20px;border-radius:10px;font-size:13px;
+transition:transform .3s ease;z-index:100;white-space:nowrap}
+#toast.show{transform:translateX(-50%) translateY(0)}
+</style>
+</head>
+<body>
+<div id="app">
+<div id="header">
+<span id="hdr-title">Muse EEG Lab</span>
+<span id="hdr-status"></span>
+</div>
+
+<div id="screen-connect" class="screen active">
+<div class="connect-hero">
+<div class="muse-icon">🧠</div>
+<button class="btn-primary" id="btn-connect">Connect Muse</button>
+<div id="connect-status">Tap to scan for your Muse headband.<br>Use Bluefy browser on iOS.</div>
+<div class="electrode-grid hidden" id="electrode-grid">
+<div class="electrode"><div class="electrode-dot" id="eq-TP9"></div>TP9</div>
+<div class="electrode"><div class="electrode-dot" id="eq-AF7"></div>AF7</div>
+<div class="electrode"><div class="electrode-dot" id="eq-AF8"></div>AF8</div>
+<div class="electrode"><div class="electrode-dot" id="eq-TP10"></div>TP10</div>
+</div>
+<button class="btn-secondary" id="btn-demo">Demo Mode</button>
+</div>
+</div>
+
+<div id="screen-monitor" class="screen">
+<div class="score-section">
+<div id="score-value">--</div>
+<div id="score-label">Focus</div>
+</div>
+<canvas id="wave-canvas"></canvas>
+<div class="band-section" id="band-section"></div>
+<button id="btn-record">&#9679;</button>
+</div>
+
+<div id="screen-protocol" class="screen">
+<div class="protocol-list" id="protocol-list"></div>
+<div class="protocol-runner hidden" id="protocol-runner">
+<div id="phase-name"></div>
+<div id="phase-instruction"></div>
+<div id="reading-pane" class="hidden"></div>
+<div id="phase-timer">0:00</div>
+<div id="phase-progress"><div id="phase-progress-fill"></div></div>
+<div id="phase-counter"></div>
+<div id="proto-score-value">--</div>
+<button id="proto-stop">Stop Protocol</button>
+</div>
+</div>
+
+<div id="screen-export" class="screen">
+<div class="export-list" id="export-list">
+<div class="empty-state">No sessions recorded yet</div>
+</div>
+</div>
+
+<div id="tab-bar">
+<div class="tab active" data-screen="connect"><span class="tab-icon">&#9889;</span>Connect</div>
+<div class="tab" data-screen="monitor"><span class="tab-icon">&#128200;</span>Monitor</div>
+<div class="tab" data-screen="protocol"><span class="tab-icon">&#9201;</span>Protocol</div>
+<div class="tab" data-screen="export"><span class="tab-icon">&#128229;</span>Export</div>
+</div>
+</div>
+<div id="toast"></div>
+
+<script>
+'use strict';
+
+/* ═══════════════════════════════════════
+   ARTIFACT DOWNLOADS CAPABILITY
+   ═══════════════════════════════════════ */
+let claudeDownloads = null;
+(async () => {
+  try {
+    if (window.claude && window.claude.use) {
+      claudeDownloads = await window.claude.use('downloads');
+    }
+  } catch(e) {}
+})();
+
+/* ═══════════════════════════════════════
+   CONSTANTS
+   ═══════════════════════════════════════ */
+const FS = 256;
+const WIN = 4 * FS;            // 1024 samples = 4-sec analysis window
+const ANALYSIS_HZ = 4;
+const UV_PER_BIT = 0.48828125; // µV per LSB (12-bit, 2 mV span)
+const ARTIFACT_UV = 150;       // peak-to-peak reject threshold
+
+const MUSE_SERVICE = 0xfe8d;
+const BASE = '273e{0}-4c4d-454d-96be-f03bac821358';
+function museUUID(id) { return BASE.replace('{0}', id.toString(16).padStart(4,'0')); }
+const CHAR_CTRL = museUUID(0x0001);
+const CHAR_EEG = { TP9: museUUID(0x0003), AF7: museUUID(0x0004), AF8: museUUID(0x0005), TP10: museUUID(0x0006) };
+const SENSORS = ['TP9','AF7','AF8','TP10'];
+const SENSOR_COLORS = { TP9:'#ff9f43', AF7:'#3dff9a', AF8:'#00d4ff', TP10:'#ff6b81' };
+
+const BANDS = [
+  { name:'delta', sym:'δ', lo:1, hi:4,  color:'#8a6bff' },
+  { name:'theta', sym:'θ', lo:4, hi:8,  color:'#00d4ff' },
+  { name:'alpha', sym:'α', lo:8, hi:13, color:'#3dff9a' },
+  { name:'beta',  sym:'β', lo:13,hi:30, color:'#ffd84a' },
+  { name:'gamma', sym:'γ', lo:30,hi:44, color:'#ff4d6d' },
+];
+
+// Pre-compute Hanning window
+const HANNING = new Float64Array(WIN);
+for (let i = 0; i < WIN; i++) HANNING[i] = 0.5 * (1 - Math.cos(2 * Math.PI * i / (WIN - 1)));
+
+/* ═══════════════════════════════════════
+   STATE
+   ═══════════════════════════════════════ */
+const S = {
+  connected: false, streaming: false, demo: false,
+  device: null, server: null, ctrlChar: null,
+  // Ring buffers per sensor (12 sec)
+  eeg: {}, sampleCount: {}, quality: {},
+  // Analysis output
+  bandAbs: {}, bandRel: {}, engagement: null, focusScore: null,
+  // Calibration
+  calActive: false, calData: [], calMean: null, calStd: null, calDone: false,
+  // Recording
+  recording: false, rawRows: [], analysisRows: [], rawSampleNum: 0,
+  rawPending: new Map(), recordStart: 0, currentProto: '',
+  // Protocol
+  protoRunning: false, phases: [], phaseIdx: 0, protoStart: 0, phaseStart: 0,
+  // Sessions
+  sessions: [],
+  // Render
+  animId: null, analysisIv: null, calIv: null, demoIv: null,
+};
+for (const s of SENSORS) {
+  S.eeg[s] = new Float64Array(WIN * 3);
+  S.sampleCount[s] = 0;
+  S.quality[s] = '';
+}
+
+/* ═══════════════════════════════════════
+   AUDIO
+   ═══════════════════════════════════════ */
+let audioCtx = null;
+function initAudio() { try { if (!audioCtx) audioCtx = new AudioContext(); if (audioCtx.state==='suspended') audioCtx.resume(); } catch(e){} }
+function beep(freq, ms) {
+  try {
+    initAudio();
+    const o = audioCtx.createOscillator(), g = audioCtx.createGain();
+    o.connect(g); g.connect(audioCtx.destination);
+    o.frequency.value = freq; g.gain.value = 0.3;
+    o.start(); g.gain.exponentialRampToValueAtTime(0.001, audioCtx.currentTime + ms/1000);
+    o.stop(audioCtx.currentTime + ms/1000 + 0.02);
+  } catch(e){}
+}
+
+/* ═══════════════════════════════════════
+   FFT  (radix-2, in-place, Cooley-Tukey)
+   ═══════════════════════════════════════ */
+function fft(re, im) {
+  const n = re.length;
+  // Bit-reversal permutation
+  for (let i = 1, j = 0; i < n; i++) {
+    let bit = n >> 1;
+    while (j & bit) { j ^= bit; bit >>= 1; }
+    j ^= bit;
+    if (i < j) { let t = re[i]; re[i] = re[j]; re[j] = t; t = im[i]; im[i] = im[j]; im[j] = t; }
+  }
+  // Butterfly
+  for (let len = 2; len <= n; len *= 2) {
+    const ang = -2 * Math.PI / len;
+    const wR = Math.cos(ang), wI = Math.sin(ang);
+    for (let i = 0; i < n; i += len) {
+      let cR = 1, cI = 0;
+      const half = len >> 1;
+      for (let j = 0; j < half; j++) {
+        const k = i + j, m = k + half;
+        const tR = cR * re[m] - cI * im[m];
+        const tI = cR * im[m] + cI * re[m];
+        re[m] = re[k] - tR; im[m] = im[k] - tI;
+        re[k] += tR;        im[k] += tI;
+        const nr = cR * wR - cI * wI;
+        cI = cR * wI + cI * wR; cR = nr;
+      }
+    }
+  }
+}
+
+/* ═══════════════════════════════════════
+   EEG DECODE
+   ═══════════════════════════════════════ */
+function decodeEEG(dv) {
+  const idx = (dv.getUint8(0) << 8) | dv.getUint8(1);
+  const samples = new Float64Array(12);
+  let si = 0;
+  for (let i = 2; i < 20; i += 3) {
+    const b0 = dv.getUint8(i), b1 = dv.getUint8(i+1), b2 = dv.getUint8(i+2);
+    const raw0 = (b0 << 4) | (b1 >> 4);
+    const raw1 = ((b1 & 0x0F) << 8) | b2;
+    samples[si++] = (raw0 - 2048) * UV_PER_BIT;
+    samples[si++] = (raw1 - 2048) * UV_PER_BIT;
+  }
+  return { idx, samples };
+}
+
+/* ═══════════════════════════════════════
+   MUSE BLE
+   ═══════════════════════════════════════ */
+function museCmd(text) {
+  const enc = new TextEncoder().encode(text + '\n');
+  const out = new Uint8Array(enc.length + 1);
+  out[0] = enc.length;
+  out.set(enc, 1);
+  return out;
+}
+
+async function connectMuse() {
+  if (!navigator.bluetooth) { setStatus('Web Bluetooth not available. Use Bluefy on iOS.'); return; }
+  if (S.connected) { disconnectMuse(); return; }
+  if (S.demo) stopDemo();
+  setStatus('Scanning…');
+  try {
+    const device = await navigator.bluetooth.requestDevice({
+      filters: [{ namePrefix: 'Muse' }],
+      optionalServices: [MUSE_SERVICE]
+    });
+    S.device = device;
+    device.addEventListener('gattserverdisconnected', onDisconnect);
+    setStatus('Connecting…');
+    const server = await device.gatt.connect();
+    S.server = server;
+    setStatus('Starting EEG stream…');
+    const service = await server.getPrimaryService(MUSE_SERVICE);
+    S.ctrlChar = await service.getCharacteristic(CHAR_CTRL);
+    for (const sensor of SENSORS) {
+      const ch = await service.getCharacteristic(CHAR_EEG[sensor]);
+      ch.addEventListener('characteristicvaluechanged', (e) => onEEG(sensor, e));
+      await ch.startNotifications();
+    }
+    // Muse 2016 preset, then start data
+    await S.ctrlChar.writeValue(museCmd('p20'));
+    await delay(100);
+    await S.ctrlChar.writeValue(museCmd('d'));
+    S.connected = true; S.streaming = true; S.demo = false;
+    setStatus('Connected: ' + device.name);
+    document.getElementById('electrode-grid').classList.remove('hidden');
+    document.getElementById('btn-connect').textContent = 'Disconnect';
+    document.getElementById('hdr-status').textContent = '🟢';
+    initAudio();
+    startAnalysis();
+    startCalibration();
+    showScreen('monitor');
+  } catch (e) {
+    if (e.name === 'NotFoundError') setStatus('Scan cancelled.');
+    else setStatus('Error: ' + e.message);
+  }
+}
+
+function onEEG(sensor, event) {
+  const dv = event.target.value;
+  if (!dv || dv.byteLength < 20) return;
+  const { idx, samples } = decodeEEG(dv);
+  // Push to ring buffer
+  const buf = S.eeg[sensor];
+  const sc = S.sampleCount[sensor];
+  for (let i = 0; i < 12; i++) buf[(sc + i) % buf.length] = samples[i];
+  S.sampleCount[sensor] = sc + 12;
+  // Raw recording with cross-sensor alignment
+  if (S.recording) {
+    if (!S.rawPending.has(idx)) S.rawPending.set(idx, { time: Date.now() });
+    S.rawPending.get(idx)[sensor] = samples;
+    const p = S.rawPending.get(idx);
+    if (p.TP9 && p.AF7 && p.AF8 && p.TP10) {
+      const tSec = (p.time - S.recordStart) / 1000;
+      for (let i = 0; i < 12; i++) {
+        S.rawRows.push([tSec + i/FS, S.rawSampleNum++, p.TP9[i], p.AF7[i], p.AF8[i], p.TP10[i]]);
+      }
+      S.rawPending.delete(idx);
+    }
+    // Expire stale pending (>200 ms)
+    const now = Date.now();
+    for (const [k,v] of S.rawPending) { if (now - v.time > 200) S.rawPending.delete(k); }
+  }
+}
+
+function onDisconnect() {
+  S.connected = false; S.streaming = false;
+  setStatus('Disconnected');
+  document.getElementById('electrode-grid').classList.add('hidden');
+  document.getElementById('btn-connect').textContent = 'Connect Muse';
+  document.getElementById('hdr-status').textContent = '';
+  stopAnalysis();
+  if (S.protoRunning) stopProtocol();
+}
+
+async function disconnectMuse() {
+  try { if (S.ctrlChar) await S.ctrlChar.writeValue(museCmd('h')); } catch(e){}
+  try { if (S.device && S.device.gatt.connected) S.device.gatt.disconnect(); } catch(e){}
+  onDisconnect();
+}
+
+/* ═══════════════════════════════════════
+   ANALYSIS ENGINE
+   ═══════════════════════════════════════ */
+function runAnalysis() {
+  let goodFrontal = 0;
+  let betaSum = 0, alphaSum = 0, thetaSum = 0;
+
+  for (const sensor of SENSORS) {
+    const buf = S.eeg[sensor];
+    const sc = S.sampleCount[sensor];
+    if (sc < WIN) { S.quality[sensor] = ''; continue; }
+
+    const bufLen = buf.length;
+    // Extract last WIN samples
+    const win = new Float64Array(WIN);
+    for (let i = 0; i < WIN; i++) win[i] = buf[(sc - WIN + i) % bufLen];
+
+    // Peak-to-peak check
+    let mn = Infinity, mx = -Infinity;
+    for (let i = 0; i < WIN; i++) { if (win[i] < mn) mn = win[i]; if (win[i] > mx) mx = win[i]; }
+    const ptp = mx - mn;
+    S.quality[sensor] = ptp < 80 ? 'good' : ptp < ARTIFACT_UV ? 'ok' : 'bad';
+    updateElectrodeUI(sensor);
+
+    if (ptp > ARTIFACT_UV) continue;
+
+    // Hanning window + FFT
+    const re = new Float64Array(WIN);
+    const im = new Float64Array(WIN);
+    for (let i = 0; i < WIN; i++) re[i] = win[i] * HANNING[i];
+    fft(re, im);
+
+    // Band powers
+    const powers = {};
+    let total = 0;
+    for (const b of BANDS) {
+      const lo = Math.ceil(b.lo * WIN / FS);
+      const hi = Math.floor(b.hi * WIN / FS);
+      let pw = 0;
+      for (let i = lo; i <= hi; i++) pw += re[i]*re[i] + im[i]*im[i];
+      pw /= WIN;
+      powers[b.name] = pw;
+      total += pw;
+    }
+    const rel = {};
+    for (const b of BANDS) rel[b.name] = total > 0 ? powers[b.name] / total : 0;
+    S.bandAbs[sensor] = powers;
+    S.bandRel[sensor] = rel;
+
+    if (sensor === 'AF7' || sensor === 'AF8') {
+      goodFrontal++;
+      betaSum += powers.beta;
+      alphaSum += powers.alpha;
+      thetaSum += powers.theta;
+    }
+  }
+
+  // Engagement ratio from frontal average
+  if (goodFrontal > 0) {
+    const beta = betaSum / goodFrontal;
+    const alpha = alphaSum / goodFrontal;
+    const theta = thetaSum / goodFrontal;
+    const denom = alpha + theta;
+    S.engagement = denom > 0 ? beta / denom : 0;
+  } else {
+    S.engagement = null;
+  }
+
+  // Calibration collection
+  if (S.engagement !== null && S.calActive) S.calData.push(S.engagement);
+
+  // Score
+  if (S.engagement !== null && S.calDone) {
+    const z = S.calStd > 0 ? (S.engagement - S.calMean) / S.calStd : 0;
+    S.focusScore = Math.max(0, Math.min(100, Math.round(50 + z * 15)));
+  }
+
+  // Record analysis row
+  if (S.recording) {
+    const row = {
+      t: (Date.now() - S.recordStart) / 1000,
+      phase: getCurrentPhase(),
+      score: S.focusScore,
+      eng: S.engagement,
+    };
+    for (const sensor of SENSORS) {
+      if (S.bandAbs[sensor]) {
+        for (const b of BANDS) {
+          row[sensor+'_'+b.name] = S.bandAbs[sensor][b.name];
+          row[sensor+'_'+b.name+'_r'] = S.bandRel[sensor]?.[b.name];
+        }
+      }
+      row[sensor+'_q'] = S.quality[sensor];
+    }
+    S.analysisRows.push(row);
+  }
+}
+
+/* ═══════════════════════════════════════
+   CALIBRATION
+   ═══════════════════════════════════════ */
+let calRemaining = 60;
+function startCalibration() {
+  S.calActive = true; S.calData = []; S.calDone = false; S.focusScore = null;
+  calRemaining = 60;
+  updateScoreLabel('Calibrating (60 s)…');
+  S.calIv = setInterval(() => {
+    calRemaining--;
+    if (calRemaining > 0) { updateScoreLabel('Calibrating (' + calRemaining + ' s)…'); return; }
+    clearInterval(S.calIv); S.calIv = null;
+    finishCalibration();
+  }, 1000);
+}
+function finishCalibration() {
+  S.calActive = false;
+  if (S.calData.length < 20) { updateScoreLabel('Poor signal — recalibrating…'); startCalibration(); return; }
+  const sum = S.calData.reduce((a,b) => a + b, 0);
+  S.calMean = sum / S.calData.length;
+  const sq = S.calData.reduce((a,v) => a + (v - S.calMean)**2, 0);
+  S.calStd = Math.sqrt(sq / S.calData.length);
+  if (S.calStd < 1e-9) S.calStd = 0.1; // avoid div-by-zero
+  S.calDone = true;
+  updateScoreLabel('Focus');
+  beep(880, 200);
+}
+
+/* ═══════════════════════════════════════
+   PROTOCOLS
+   ═══════════════════════════════════════ */
+const READING_BORING = 'The Committee on Appropriations shall have jurisdiction over all proposed legislation, messages, petitions, memorials, and other matters relating to the following subjects: appropriation of the revenue for the support of the Government; rescissions of appropriations contained in appropriation Acts; transfers of unexpended balances; new spending authority described in the Congressional Budget Act of 1974. The committee shall study on a continuing basis those provisions of law which provide spending authority without annual appropriations.';
+
+const READING_INTERESTING = 'In 1848, Phineas Gage was tamping blasting powder into a hole drilled in rock when the iron rod shot through his skull, entering below his left cheekbone and exiting through the top of his head. He stood up, spoke, and walked to a cart. He survived for twelve more years. But the man who returned was not the man who had left. His friends said he was "no longer Gage." The case became the first real evidence that specific brain regions govern personality, planning, and social behaviour, launching modern neuroscience from a single horrifying accident on a Vermont railroad.';
+
+const PROTOCOLS = [
+  {
+    id:'quick', name:'Quick Check', desc:'2 min — eyes open + eyes closed, verify signal',
+    phases:[
+      { name:'Eyes Open', dur:60, inst:'Sit still, eyes open, look at a fixed point.' },
+      { name:'Eyes Closed', dur:60, inst:'Close your eyes, relax, breathe normally.' },
+    ]
+  },
+  {
+    id:'focus', name:'Focus Test', desc:'5 min — baseline, mental math, recovery',
+    phases:[
+      { name:'Baseline', dur:60, inst:'Sit still, eyes open, relax.' },
+      { name:'Serial 7s', dur:120, inst:'Count backwards from 1000 by 7.\n1000, 993, 986, 979…' },
+      { name:'Recovery', dur:120, inst:'Sit still, relax, let your mind wander.' },
+    ]
+  },
+  {
+    id:'full', name:'Full Protocol', desc:'8 min — habituation, rest, math, reading',
+    phases:[
+      { name:'Habituation', dur:60, inst:'Let the headband settle. Sit still.' },
+      { name:'Eyes Open Rest', dur:60, inst:'Eyes open, look at a fixed point. Relax.' },
+      { name:'Eyes Closed Rest', dur:60, inst:'Close your eyes. Relax. Breathe normally.' },
+      { name:'Serial 7s', dur:90, inst:'Count backwards from 1000 by 7.\n1000, 993, 986, 979…' },
+      { name:'Boring Reading', dur:90, inst:'Read the passage below.', reading:'boring' },
+      { name:'Interesting Reading', dur:90, inst:'Read the passage below.', reading:'interesting' },
+    ]
+  },
+];
+
+function startProtocol(id) {
+  const proto = PROTOCOLS.find(p => p.id === id);
+  if (!proto) return;
+  if (!S.streaming) { toast('Connect Muse or start Demo first'); return; }
+  initAudio();
+  startRecording();
+  S.protoRunning = true;
+  S.phases = proto.phases;
+  S.phaseIdx = 0;
+  S.protoStart = Date.now();
+  S.phaseStart = Date.now();
+  S.currentProto = proto.name;
+  document.getElementById('protocol-list').classList.add('hidden');
+  document.getElementById('protocol-runner').classList.remove('hidden');
+  updatePhaseDisplay();
+  beep(880, 200);
+}
+
+function updateProtocol() {
+  if (!S.protoRunning) return;
+  const phase = S.phases[S.phaseIdx];
+  const elapsed = (Date.now() - S.phaseStart) / 1000;
+  const remaining = Math.max(0, phase.dur - elapsed);
+  if (remaining <= 0) {
+    S.phaseIdx++;
+    if (S.phaseIdx >= S.phases.length) { finishProtocol(); return; }
+    S.phaseStart = Date.now();
+    beep(440, 150);
+    updatePhaseDisplay();
+  }
+  // Timer
+  const r = Math.max(0, S.phases[S.phaseIdx].dur - (Date.now() - S.phaseStart)/1000);
+  const mins = Math.floor(r / 60), secs = Math.floor(r % 60);
+  document.getElementById('phase-timer').textContent = mins + ':' + String(secs).padStart(2,'0');
+  // Progress
+  const totalDur = S.phases.reduce((s,p) => s + p.dur, 0);
+  const totalEl = (Date.now() - S.protoStart) / 1000;
+  document.getElementById('phase-progress-fill').style.width = Math.min(100, totalEl/totalDur*100) + '%';
+  document.getElementById('phase-counter').textContent = 'Phase ' + (S.phaseIdx+1) + ' of ' + S.phases.length;
+  // Score
+  const sv = document.getElementById('proto-score-value');
+  sv.textContent = S.focusScore !== null ? S.focusScore : '--';
+  sv.style.color = scoreColor(S.focusScore);
+}
+
+function updatePhaseDisplay() {
+  const phase = S.phases[S.phaseIdx];
+  document.getElementById('phase-name').textContent = phase.name;
+  document.getElementById('phase-instruction').textContent = phase.inst;
+  const rp = document.getElementById('reading-pane');
+  if (phase.reading) {
+    rp.textContent = phase.reading === 'boring' ? READING_BORING : READING_INTERESTING;
+    rp.classList.remove('hidden');
+  } else rp.classList.add('hidden');
+}
+
+function finishProtocol() {
+  S.protoRunning = false;
+  beep(880, 200); setTimeout(() => beep(880, 200), 300);
+  stopRecording();
+  document.getElementById('protocol-runner').classList.add('hidden');
+  document.getElementById('protocol-list').classList.remove('hidden');
+  toast('Protocol complete! Check Export tab.');
+}
+
+function stopProtocol() {
+  S.protoRunning = false;
+  stopRecording();
+  document.getElementById('protocol-runner').classList.add('hidden');
+  document.getElementById('protocol-list').classList.remove('hidden');
+}
+
+function getCurrentPhase() {
+  return S.protoRunning ? (S.phases[S.phaseIdx]?.name || '') : (S.recording ? 'Manual' : '');
+}
+
+/* ═══════════════════════════════════════
+   RECORDING & EXPORT
+   ═══════════════════════════════════════ */
+function startRecording() {
+  S.recording = true; S.rawRows = []; S.analysisRows = [];
+  S.rawSampleNum = 0; S.rawPending = new Map();
+  S.recordStart = Date.now();
+  document.getElementById('btn-record').classList.add('recording');
+}
+
+function stopRecording() {
+  if (!S.recording) return;
+  S.recording = false;
+  document.getElementById('btn-record').classList.remove('recording');
+  const dur = Math.round((Date.now() - S.recordStart) / 1000);
+  if (S.rawRows.length === 0 && S.analysisRows.length === 0) return;
+  S.sessions.push({
+    id: Date.now(), date: new Date().toLocaleString(),
+    duration: dur, protocol: S.currentProto || 'Manual',
+    rawRows: S.rawRows.slice(), analysisRows: S.analysisRows.slice(),
+  });
+  updateExportList();
+}
+
+function toggleRecord() {
+  if (S.recording) { stopRecording(); toast('Recording saved'); }
+  else { if (!S.streaming) { toast('Connect Muse or start Demo first'); return; } startRecording(); toast('Recording started'); }
+}
+
+function makeRawCSV(session) {
+  const lines = ['time_s,sample_num,TP9,AF7,AF8,TP10'];
+  for (const r of session.rawRows) {
+    lines.push(r[0].toFixed(6)+','+r[1]+','+r[2].toFixed(2)+','+r[3].toFixed(2)+','+r[4].toFixed(2)+','+r[5].toFixed(2));
+  }
+  return lines.join('\n');
+}
+
+function makeAnalysisCSV(session) {
+  const cols = ['time_s','phase','focus_score','engagement'];
+  for (const s of SENSORS) for (const b of BANDS) { cols.push(s+'_'+b.name); cols.push(s+'_'+b.name+'_rel'); }
+  for (const s of SENSORS) cols.push(s+'_quality');
+  const lines = [cols.join(',')];
+  for (const r of session.analysisRows) {
+    const v = [r.t?.toFixed(3)||'', r.phase||'', r.score??'', r.eng!=null?r.eng.toFixed(6):''];
+    for (const s of SENSORS) for (const b of BANDS) {
+      v.push(r[s+'_'+b.name]!=null ? r[s+'_'+b.name].toFixed(4) : '');
+      v.push(r[s+'_'+b.name+'_r']!=null ? r[s+'_'+b.name+'_r'].toFixed(6) : '');
+    }
+    for (const s of SENSORS) v.push(r[s+'_q']||'');
+    lines.push(v.join(','));
+  }
+  return lines.join('\n');
+}
+
+function csvFilename(session, type) {
+  return 'muse_'+type+'_'+new Date(session.id).toISOString().slice(0,16).replace(/[:T]/g,'-')+'.csv';
+}
+
+async function exportCSV(sessionId, type) {
+  const session = S.sessions.find(s => s.id === sessionId);
+  if (!session) return;
+  const csv = type === 'raw' ? makeRawCSV(session) : makeAnalysisCSV(session);
+  const fname = csvFilename(session, type);
+  // Try artifact downloads capability (works in claude.ai viewer)
+  if (claudeDownloads) {
+    try {
+      await claudeDownloads.save({ filename: fname, data: csv });
+      toast('Saved: ' + fname);
+      return;
+    } catch(e) {}
+  }
+  // Try Web Share API with file (best on iOS / Bluefy)
+  if (navigator.share && navigator.canShare) {
+    try {
+      const file = new File([csv], fname, { type: 'text/csv' });
+      if (navigator.canShare({ files: [file] })) {
+        navigator.share({ files: [file], title: fname }).catch(() => {});
+        return;
+      }
+    } catch(e){}
+  }
+  // Try download link (desktop browsers)
+  try {
+    const blob = new Blob([csv], { type: 'text/csv' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url; a.download = fname;
+    document.body.appendChild(a); a.click();
+    document.body.removeChild(a);
+    setTimeout(() => URL.revokeObjectURL(url), 5000);
+    toast('Download: ' + fname);
+    return;
+  } catch(e){}
+  // Fallback: clipboard
+  copyToClipboard(csv, fname);
+}
+
+function copyToClipboard(csv, fname) {
+  navigator.clipboard.writeText(csv).then(
+    () => toast('Copied ' + fname + ' to clipboard'),
+    () => toast('Export failed')
+  );
+}
+
+/* ═══════════════════════════════════════
+   CANVAS RENDERING
+   ═══════════════════════════════════════ */
+let lastFrame = 0;
+function renderFrame(ts) {
+  S.animId = requestAnimationFrame(renderFrame);
+  if (ts - lastFrame < 33) return; // 30 fps cap
+  lastFrame = ts;
+  renderWaveform();
+}
+
+function renderWaveform() {
+  const canvas = document.getElementById('wave-canvas');
+  if (!canvas || canvas.offsetWidth === 0 || canvas.offsetHeight === 0) return;
+  const dpr = window.devicePixelRatio || 1;
+  const w = canvas.offsetWidth, h = canvas.offsetHeight;
+  if (canvas.width !== w*dpr || canvas.height !== h*dpr) {
+    canvas.width = w * dpr; canvas.height = h * dpr;
+  }
+  const ctx = canvas.getContext('2d');
+  ctx.setTransform(dpr,0,0,dpr,0,0);
+  ctx.fillStyle = '#0a0a0a'; ctx.fillRect(0,0,w,h);
+
+  const channelH = h / 4;
+  const dispSamples = FS * 4; // 4 sec window
+  const xScale = w / dispSamples;
+
+  for (let ci = 0; ci < 4; ci++) {
+    const sensor = SENSORS[ci];
+    const y0 = ci * channelH;
+    const yMid = y0 + channelH / 2;
+    // Divider
+    ctx.strokeStyle = '#1a1a1a'; ctx.lineWidth = 0.5;
+    ctx.beginPath(); ctx.moveTo(0, y0 + channelH); ctx.lineTo(w, y0 + channelH); ctx.stroke();
+    // Center line
+    ctx.strokeStyle = '#1f1f1f'; ctx.beginPath(); ctx.moveTo(0,yMid); ctx.lineTo(w,yMid); ctx.stroke();
+    // Label
+    ctx.fillStyle = SENSOR_COLORS[sensor]; ctx.font = '10px -apple-system,system-ui,sans-serif';
+    ctx.fillText(sensor, 4, y0 + 12);
+    // Waveform
+    const buf = S.eeg[sensor];
+    const sc = S.sampleCount[sensor];
+    const avail = Math.min(dispSamples, sc);
+    if (avail < 2) continue;
+    const bufLen = buf.length;
+    const startSample = sc - avail;
+    const yScale = channelH / (ARTIFACT_UV * 2);
+    ctx.strokeStyle = SENSOR_COLORS[sensor]; ctx.lineWidth = 1; ctx.globalAlpha = 0.8;
+    ctx.beginPath();
+    for (let i = 0; i < avail; i++) {
+      const val = buf[(startSample + i) % bufLen];
+      const x = i * xScale;
+      const y = yMid - val * yScale;
+      if (i === 0) ctx.moveTo(x, y); else ctx.lineTo(x, y);
+    }
+    ctx.stroke();
+    ctx.globalAlpha = 1;
+  }
+}
+
+/* ═══════════════════════════════════════
+   UI HELPERS
+   ═══════════════════════════════════════ */
+function scoreColor(s) {
+  if (s == null) return '#555';
+  if (s < 50) return lerpColor('#ff5a5f','#ffd84a', s/50);
+  return lerpColor('#ffd84a','#3dff9a', (s-50)/50);
+}
+function lerpColor(a, b, t) {
+  const p = (c,i) => parseInt(c.slice(i,i+2),16);
+  const r = Math.round(p(a,1) + (p(b,1)-p(a,1))*t);
+  const g = Math.round(p(a,3) + (p(b,3)-p(a,3))*t);
+  const bl = Math.round(p(a,5) + (p(b,5)-p(a,5))*t);
+  return '#'+[r,g,bl].map(v=>v.toString(16).padStart(2,'0')).join('');
+}
+
+function updateScore() {
+  const el = document.getElementById('score-value');
+  el.textContent = S.focusScore !== null ? S.focusScore : '--';
+  el.style.color = scoreColor(S.focusScore);
+}
+function updateScoreLabel(t) { document.getElementById('score-label').textContent = t; }
+function updateElectrodeUI(sensor) {
+  const dot = document.getElementById('eq-'+sensor);
+  if (dot) { dot.className = 'electrode-dot ' + (S.quality[sensor] || ''); }
+}
+
+function updateBandBars() {
+  const avg = {};
+  let count = 0;
+  for (const s of SENSORS) {
+    if (!S.bandRel[s]) continue;
+    count++;
+    for (const b of BANDS) avg[b.name] = (avg[b.name]||0) + (S.bandRel[s][b.name]||0);
+  }
+  if (count === 0) return;
+  for (const b of BANDS) {
+    const pct = Math.round((avg[b.name] / count) * 100);
+    const bar = document.getElementById('bar-'+b.name);
+    const lab = document.getElementById('pct-'+b.name);
+    if (bar) bar.style.width = pct + '%';
+    if (lab) lab.textContent = pct + '%';
+  }
+}
+
+function showScreen(name) {
+  document.querySelectorAll('.screen').forEach(s => s.classList.remove('active'));
+  document.getElementById('screen-'+name).classList.add('active');
+  document.querySelectorAll('.tab').forEach(t => {
+    t.classList.toggle('active', t.dataset.screen === name);
+  });
+}
+
+function setStatus(text) { document.getElementById('connect-status').innerHTML = text; }
+function toast(msg) {
+  const el = document.getElementById('toast');
+  el.textContent = msg; el.classList.add('show');
+  setTimeout(() => el.classList.remove('show'), 2500);
+}
+function delay(ms) { return new Promise(r => setTimeout(r, ms)); }
+
+/* ═══════════════════════════════════════
+   ANALYSIS LOOP
+   ═══════════════════════════════════════ */
+function startAnalysis() {
+  if (S.analysisIv) return;
+  S.analysisIv = setInterval(() => {
+    runAnalysis();
+    updateBandBars();
+    updateScore();
+    if (S.protoRunning) updateProtocol();
+  }, 1000 / ANALYSIS_HZ);
+  S.animId = requestAnimationFrame(renderFrame);
+}
+function stopAnalysis() {
+  if (S.analysisIv) { clearInterval(S.analysisIv); S.analysisIv = null; }
+  if (S.calIv) { clearInterval(S.calIv); S.calIv = null; }
+  if (S.animId) { cancelAnimationFrame(S.animId); S.animId = null; }
+}
+
+/* ═══════════════════════════════════════
+   DEMO MODE
+   ═══════════════════════════════════════ */
+let demoT = 0;
+function startDemo() {
+  if (S.connected) return;
+  if (S.demo) { stopDemo(); return; }
+  S.demo = true; S.streaming = true;
+  setStatus('Demo mode (synthetic EEG)');
+  document.getElementById('electrode-grid').classList.remove('hidden');
+  document.getElementById('hdr-status').textContent = '🟡';
+  document.getElementById('btn-demo').textContent = 'Stop Demo';
+  for (const s of SENSORS) { S.quality[s] = 'good'; updateElectrodeUI(s); }
+  demoT = 0;
+  S.demoIv = setInterval(() => {
+    const allSamples = {};
+    for (const sensor of SENSORS) {
+      const samples = new Float64Array(12);
+      for (let i = 0; i < 12; i++) {
+        const ti = demoT + i/FS;
+        let v = 20*Math.sin(2*Math.PI*2.5*ti) + 12*Math.sin(2*Math.PI*6*ti)
+              + 15*Math.sin(2*Math.PI*10*ti) + 6*Math.sin(2*Math.PI*22*ti)
+              + 2*Math.sin(2*Math.PI*35*ti) + 5*(Math.random()-0.5);
+        if (sensor==='AF7'||sensor==='AF8') v *= 1.1;
+        if (sensor==='TP9') v *= 0.9;
+        samples[i] = v;
+      }
+      allSamples[sensor] = samples;
+      const buf = S.eeg[sensor];
+      const sc = S.sampleCount[sensor];
+      for (let i = 0; i < 12; i++) buf[(sc+i)%buf.length] = samples[i];
+      S.sampleCount[sensor] = sc + 12;
+    }
+    // Demo raw recording (already aligned)
+    if (S.recording) {
+      const tSec = (Date.now() - S.recordStart) / 1000;
+      for (let i = 0; i < 12; i++) {
+        S.rawRows.push([tSec+i/FS, S.rawSampleNum++,
+          allSamples.TP9[i], allSamples.AF7[i], allSamples.AF8[i], allSamples.TP10[i]]);
+      }
+    }
+    demoT += 12/FS;
+  }, 47);
+  initAudio();
+  startAnalysis();
+  startCalibration();
+  showScreen('monitor');
+}
+
+function stopDemo() {
+  if (S.demoIv) { clearInterval(S.demoIv); S.demoIv = null; }
+  S.demo = false; S.streaming = false;
+  stopAnalysis();
+  if (S.protoRunning) stopProtocol();
+  document.getElementById('electrode-grid').classList.add('hidden');
+  document.getElementById('hdr-status').textContent = '';
+  document.getElementById('btn-demo').textContent = 'Demo Mode';
+  setStatus('Tap to scan for your Muse headband.<br>Use Bluefy browser on iOS.');
+}
+
+/* ═══════════════════════════════════════
+   EXPORT LIST
+   ═══════════════════════════════════════ */
+function updateExportList() {
+  const el = document.getElementById('export-list');
+  if (S.sessions.length === 0) { el.innerHTML = '<div class="empty-state">No sessions recorded yet</div>'; return; }
+  el.innerHTML = '';
+  for (const sess of S.sessions.slice().reverse()) {
+    const card = document.createElement('div');
+    card.className = 'session-card';
+    const m = Math.floor(sess.duration/60), s = sess.duration%60;
+    card.innerHTML = '<h3>'+esc(sess.protocol)+'</h3>'
+      +'<p>'+esc(sess.date)+' &middot; '+m+'m '+s+'s &middot; '
+      +sess.rawRows.length+' raw samples &middot; '+sess.analysisRows.length+' analysis rows</p>'
+      +'<div class="export-btns">'
+      +'<button class="btn-export" data-id="'+sess.id+'" data-type="raw">Export Raw</button>'
+      +'<button class="btn-export" data-id="'+sess.id+'" data-type="analysis">Export Analysis</button>'
+      +'</div>';
+    el.appendChild(card);
+  }
+}
+
+function esc(s) { const d = document.createElement('div'); d.textContent = s; return d.innerHTML; }
+
+/* ═══════════════════════════════════════
+   INIT
+   ═══════════════════════════════════════ */
+function init() {
+  // Band bars
+  const bs = document.getElementById('band-section');
+  for (const b of BANDS) {
+    const row = document.createElement('div');
+    row.className = 'band-row';
+    row.innerHTML = '<span class="band-label" style="color:'+b.color+'">'+b.sym+'</span>'
+      +'<span class="band-name">'+b.name+'</span>'
+      +'<div class="band-bar-bg"><div class="band-bar" id="bar-'+b.name+'" style="background:'+b.color+';width:0%"></div></div>'
+      +'<span class="band-pct" id="pct-'+b.name+'">0%</span>';
+    bs.appendChild(row);
+  }
+
+  // Protocol list
+  const pl = document.getElementById('protocol-list');
+  for (const proto of PROTOCOLS) {
+    const card = document.createElement('div');
+    card.className = 'proto-card';
+    card.dataset.id = proto.id;
+    card.innerHTML = '<h3>'+esc(proto.name)+'</h3><p>'+esc(proto.desc)+'</p>';
+    pl.appendChild(card);
+  }
+
+  // Event delegation
+  document.getElementById('btn-connect').addEventListener('click', connectMuse);
+  document.getElementById('btn-demo').addEventListener('click', startDemo);
+  document.getElementById('btn-record').addEventListener('click', toggleRecord);
+  document.getElementById('proto-stop').addEventListener('click', stopProtocol);
+
+  document.getElementById('tab-bar').addEventListener('click', (e) => {
+    const tab = e.target.closest('.tab');
+    if (tab) showScreen(tab.dataset.screen);
+  });
+
+  document.getElementById('protocol-list').addEventListener('click', (e) => {
+    const card = e.target.closest('.proto-card');
+    if (card) startProtocol(card.dataset.id);
+  });
+
+  document.getElementById('export-list').addEventListener('click', (e) => {
+    const btn = e.target.closest('.btn-export');
+    if (btn) exportCSV(Number(btn.dataset.id), btn.dataset.type);
+  });
+
+  // Web Bluetooth check
+  if (!navigator.bluetooth) {
+    document.getElementById('btn-connect').disabled = true;
+    setStatus('Web Bluetooth not supported.<br>Open this page in <b>Bluefy</b> browser on iOS.');
+  }
+
+  updateExportList();
+}
+
+document.addEventListener('DOMContentLoaded', init);
+</script>
+</body>
+</html>
