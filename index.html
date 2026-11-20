@@ -176,7 +176,7 @@ const ANALYSIS_HZ = 4;
 const UV_PER_BIT = 0.48828125; // µV per LSB (12-bit, 2 mV span)
 const ARTIFACT_UV = 150;       // peak-to-peak reject threshold
 
-const MUSE_SERVICE = 0xfe8d;
+const MUSE_SERVICE = '0000fe8d-0000-1000-8000-00805f9b34fb';
 const BASE = '273e{0}-4c4d-454d-96be-f03bac821358';
 function museUUID(id) { return BASE.replace('{0}', id.toString(16).padStart(4,'0')); }
 const CHAR_CTRL = museUUID(0x0001);
