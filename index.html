@@ -1,0 +1,2346 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover, user-scalable=no">
+<title>Muse bands</title>
+<!--
+Browser port of muse_focus_gui.py + muse_focus.py (Muse 2016, Web Bluetooth; on iOS use the Bluefy browser).
+Brain wave bands, electrode contact, tension alerts, timed trials and attention ratings. There is no focus score.
+The trial adhd_baseline_profile.json is built in; any other trial file in the same format can be loaded.
+
+Keys (same as the Python window):
+    1-5   toggle the delta, theta, alpha, beta, gamma lines (or click a legend label)
+    6     toggle the total-power line (shown in total units only)
+    u     units: percent share of 1-40 Hz  <->  total power (log scale, uV^2)
+    b     cycle the background: off -> lanes -> state
+    n     run a trial (press again during a trial to cancel)
+    j / s jaw / shoulder calibration (press again to cancel)
+    r     rate your attention now (then press 1-5)        o   add a note to the session
+    m     mute / unmute      v   live raw-number panel      Tab   menu      q   quit (ends the session)
+
+Recording: everything the Python recorder writes (eeg_raw.csv, packets.csv, motion.csv, telemetry.csv,
+analysis.csv, events.log, session.json, plus band_log.csv) is kept in memory and saved as a zip of the
+session folder. Each trial is exported as its own zip (eeg_raw, packets, motion, telemetry, analysis,
+events.log, summary.csv, trial.json). Zips are also kept in this browser (menu: saved files).
+-->
+<style>
+*{margin:0;padding:0;box-sizing:border-box}
+html,body{height:100%;background:#000;color:#cfcfcf;font-family:-apple-system,system-ui,Helvetica,Arial,sans-serif;
+overflow:hidden;touch-action:manipulation;-webkit-user-select:none;user-select:none}
+button{font-family:inherit;cursor:pointer}
+.hidden{display:none!important}
+#app{position:relative;display:flex;height:100%;height:100dvh;background:#000;
+padding:env(safe-area-inset-top) env(safe-area-inset-right) env(safe-area-inset-bottom) env(safe-area-inset-left)}
+#main{flex:1;min-width:0;display:flex;flex-direction:column;position:relative}
+#head{display:flex;align-items:center;gap:14px;padding:8px 10px 0 12px;min-height:34px}
+.cdot{font-weight:700;font-size:13px;color:#555;white-space:nowrap}
+.sp{flex:1}
+.chip{font-size:11px;font-weight:700;color:#3a3a3a;letter-spacing:.03em}
+#menu-btn{background:none;border:none;color:#9a9a9a;font-size:22px;line-height:1;padding:2px 4px}
+#status{font-size:11px;color:#555;padding:2px 12px 0;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;min-height:16px}
+#graph{position:relative;flex:1;min-height:150px;margin-top:4px}
+#cv{position:absolute;inset:0;width:100%;height:100%;display:block}
+#cue{position:absolute;inset:18px 12px 6px;display:flex;flex-direction:column;align-items:center;justify-content:center;
+text-align:center;pointer-events:none;gap:6px}
+#cue-big{font-weight:700;color:#fff;line-height:1.05}
+#cue-sub{font-size:13px;color:#555;white-space:pre-wrap;line-height:1.4;max-width:560px}
+#raw{position:absolute;inset:16px 10px 4px;background:#000;border:1px solid #141414;color:#9fb4c4;
+font:11px/1.35 Menlo,Consolas,"Courier New",monospace;padding:6px 8px;white-space:pre;overflow:auto;z-index:3}
+#rate{position:absolute;left:10px;right:10px;bottom:6px;background:#0b0b0b;border:1px solid #333;z-index:5;
+text-align:center;color:#d0d0d0;font-size:12px;line-height:1.4;padding:8px 8px 10px}
+#rate .rb{display:flex;justify-content:center;gap:6px;margin-top:8px}
+#rate button{width:52px;height:34px;background:#161616;border:1px solid #555;color:#fff;font-size:16px;font-weight:700}
+#rate button:active{background:#2a2a2a}
+#banner{position:absolute;left:10px;right:10px;top:20px;z-index:6;background:#0b1a12;border:1px solid #2f6a4a;
+display:flex;align-items:center;gap:8px;padding:8px 10px;font-size:12px;color:#cfe9da}
+#banner-txt{flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+#banner button{background:#143322;border:1px solid #3dff9a;color:#3dff9a;padding:6px 10px;font-size:12px}
+#banner #banner-x{border-color:#333;color:#888;background:none}
+#legend{display:grid;grid-template-columns:repeat(6,1fr);padding:2px 10px 8px}
+.leg{background:none;border:none;text-align:left;font-size:13px;font-weight:700;padding:6px 2px;white-space:nowrap;
+overflow:hidden;font-variant-numeric:tabular-nums}
+#menu{width:156px;flex:none;border-left:1px solid #1c1c1c;padding:10px 8px;overflow-y:auto;background:#000}
+@media (max-width:640px){#menu{position:absolute;right:0;top:0;bottom:0;z-index:20;width:min(200px,62vw);
+box-shadow:-10px 0 28px rgba(0,0,0,.9);padding-top:calc(10px + env(safe-area-inset-top))}}
+.mh{font-size:11px;font-weight:700;color:#555;margin-bottom:8px;display:flex;justify-content:space-between}
+.mh button{background:none;border:none;color:#777;font-size:14px}
+#layers{display:grid;grid-template-columns:repeat(6,1fr);gap:2px;margin-bottom:8px}
+.lb{height:26px;background:#0e0e0e;border:1px solid #222;font-size:13px;font-weight:700}
+.mrow{display:block;width:100%;text-align:left;background:#0e0e0e;border:1px solid #222;color:#8a8a8a;
+font-size:12px;padding:7px 7px;margin-bottom:4px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.mrow.hi{color:#e6e6e6;border-color:#555}
+.overlay{position:fixed;inset:0;z-index:50;background:rgba(0,0,0,.92);display:flex;align-items:center;justify-content:center;
+padding:20px;padding-top:calc(20px + env(safe-area-inset-top));overflow-y:auto}
+.card{width:100%;max-width:420px;background:#0b0b0b;border:1px solid #262626;padding:18px;display:flex;flex-direction:column;gap:12px}
+.card h1{font-size:18px;color:#e6e6e6}
+.card h2{font-size:15px;color:#e6e6e6}
+.card p,.card label{font-size:12px;color:#8a8a8a;line-height:1.45}
+.bigbtn{padding:13px;font-size:15px;font-weight:600;background:#3dff9a;color:#000;border:none}
+.bigbtn:disabled{opacity:.35}
+.btn2{padding:10px;font-size:13px;background:#141414;color:#cfcfcf;border:1px solid #2a2a2a;text-align:left}
+.btn2 small{display:block;color:#777;font-size:11px;margin-top:3px;line-height:1.35}
+.row{display:flex;gap:8px;align-items:center;flex-wrap:wrap}
+.row label{flex:1;min-width:120px}
+select,input[type=number],input[type=text]{background:#111;color:#ddd;border:1px solid #333;padding:7px;font-size:14px;
+font-family:inherit;-webkit-user-select:text;user-select:text}
+input[type=text]{width:100%}
+#start-msg{font-size:12px;color:#ffb84a;line-height:1.45}
+#start-msg:empty{display:none}
+.frow{display:flex;gap:8px;align-items:center;border-top:1px solid #1c1c1c;padding-top:8px;font-size:12px;color:#aaa}
+.frow span{flex:1;overflow:hidden;text-overflow:ellipsis;word-break:break-all}
+.frow small{color:#666}
+.frow button{background:#141414;border:1px solid #2a2a2a;color:#cfcfcf;padding:5px 8px;font-size:12px}
+details{font-size:12px;color:#8a8a8a}
+details pre{white-space:pre-wrap;font:11px/1.35 Menlo,Consolas,monospace;color:#9fb4c4;margin-top:6px;
+-webkit-user-select:text;user-select:text}
+</style>
+</head>
+<body>
+<div id="app">
+  <div id="main">
+    <div id="head">
+      <span class="cdot" id="cd-AF7">● AF7</span><span class="cdot" id="cd-AF8">● AF8</span>
+      <span class="sp"></span>
+      <span class="chip" id="chip-jaw">JAW</span><span class="chip" id="chip-shoulder">SHLD</span>
+      <button id="menu-btn" aria-label="Menu">☰</button>
+    </div>
+    <div id="status"></div>
+    <div id="graph">
+      <canvas id="cv"></canvas>
+      <div id="cue"><div id="cue-big"></div><div id="cue-sub"></div></div>
+      <pre id="raw" class="hidden"></pre>
+      <div id="rate" class="hidden">How well are you holding your attention?<br>1 scattered &nbsp;&nbsp; 5 locked in
+        <div class="rb"><button data-r="1">1</button><button data-r="2">2</button><button data-r="3">3</button><button data-r="4">4</button><button data-r="5">5</button></div>
+      </div>
+      <div id="banner" class="hidden"><span id="banner-txt"></span><button id="banner-dl">Download</button><button id="banner-x" aria-label="Dismiss">✕</button></div>
+    </div>
+    <div id="legend"></div>
+  </div>
+  <div id="menu" class="hidden">
+    <div class="mh"><span>MENU</span><button id="menu-x" aria-label="Close menu">✕</button></div>
+    <div id="layers"></div>
+    <div id="rows"></div>
+  </div>
+</div>
+
+<div id="start" class="overlay">
+  <div class="card">
+    <h1>Muse bands</h1>
+    <p>Live brain wave bands, electrode contact, tension alerts, timed trials and attention ratings for the Muse 2016. There is no focus score: it isn't reliable enough yet.</p>
+    <button class="bigbtn" id="btn-connect">Connect Muse</button>
+    <button class="btn2" id="btn-demo">Demo (synthetic data, no headband)</button>
+    <div class="row">
+      <label for="opt-mains">Power-line frequency</label>
+      <select id="opt-mains"><option value="60">60 Hz</option><option value="50">50 Hz</option></select>
+    </div>
+    <div class="row">
+      <label for="opt-ptp">Artifact threshold (uV)</label>
+      <input type="number" id="opt-ptp" value="150" min="50" max="1000" step="10" style="width:90px">
+    </div>
+    <label for="opt-note">Session note (time of day, dose time...), optional</label>
+    <input type="text" id="opt-note" placeholder="">
+    <div id="start-msg"></div>
+    <div id="start-done" class="hidden" style="display:flex;flex-direction:column;gap:8px"></div>
+    <button class="btn2" id="btn-files">Saved files...</button>
+  </div>
+</div>
+
+<div id="sheet" class="overlay hidden"><div class="card" id="sheet-card"></div></div>
+<input type="file" id="file-in" accept=".json,application/json" class="hidden">
+
+<script>
+'use strict';
+
+/* ================================================================ muse_focus.py constants */
+const FS = 256;                       // Muse sample rate (Hz)
+const WIN = 4 * FS;                   // analysis window: 4 s
+const UV_PER_BIT = 0.48828125;        // 12-bit ADC, 2 mV span -> microvolts
+const ARTIFACT_PTP_UV = 150.0;
+const MUSE_SERVICE = '0000fe8d-0000-1000-8000-00805f9b34fb';
+const museUUID = id => '273e' + id.toString(16).padStart(4, '0') + '-4c4d-454d-96be-f03bac821358';
+const CTRL_UUID = museUUID(0x0001);
+const EEG_UUIDS = { TP9: museUUID(0x0003), AF7: museUUID(0x0004), AF8: museUUID(0x0005), TP10: museUUID(0x0006) };
+const CH_ORDER = Object.keys(EEG_UUIDS);
+const EXTRA_UUIDS = { GYRO: museUUID(0x0009), ACC: museUUID(0x000a), TEL: museUUID(0x000b) };
+const ACC_SCALE = 0.0000610352, GYRO_SCALE = 0.0074768;
+const BAND_EDGES = { delta: [1, 4], theta: [4, 8], alpha: [8, 13], beta: [13, 30], gamma: [30, 40] };
+const BAND_NAMES = Object.keys(BAND_EDGES);
+const FOCUS_CH = ['AF7', 'AF8'];
+const TENSION_BANDS = [[1, 4], [20, 35], [35, 55]];
+const EMG_Z = 5.0;
+const MUSCLE_HOLD = 4.0;
+let MAINS_HZ = 60.0;
+const CONTACT_RAIL_FRAC = 0.02;
+const CONTACT_MAINS_UV = 15.0;
+
+/* ================================================================ muse_focus_gui.py constants */
+const BG = '#000000', FLASH_BG = '#33000a', DIM = '#555555', OFFC = '#3a3a3a', GRID = '#141414';
+const OKC = '#3dff9a', WARNC = '#ffb84a', BADC = '#ff4d6d';
+const HZ = 4, HIST_S = 120, POOL = 48;
+const LOSS_S = 0.75, STEADY_S = 3.0, BACKDATE_S = 1.5;
+const RATE_EVERY = [0, 3, 5, 10], RATE_TIMEOUT = 45.0;
+const BANDS = [['delta', 'δ', '#8a6bff'], ['theta', 'θ', '#00d4ff'], ['alpha', 'α', '#3dff9a'],
+               ['beta', 'β', '#ffd84a'], ['gamma', 'γ', '#ff4d6d']];
+const LAYERS = BANDS.concat([['total', 'Σ', '#e6e6e6']]);
+const SYM = Object.fromEntries(LAYERS.map(([k, s]) => [k, s]));
+const COL = Object.fromEntries(LAYERS.map(([k, , c]) => [k, c]));
+const MEANING = {
+  delta: ['1-4 Hz', 'deep rest, drifting'], theta: ['4-8 Hz', 'drowsy, mind wandering'],
+  alpha: ['8-13 Hz', 'relaxed, calm, idle'], beta: ['13-30 Hz', 'alert, active thinking'],
+  gamma: ['30-40 Hz', 'strain, muscle tension'], total: ['1-40 Hz', 'all power combined'],
+};
+const MODES = ['off', 'lanes', 'state'];
+const UNITS = ['percent', 'total'];
+const PROTOCOLS = {
+  jaw: { label: 'JAW', chip: 'JAW', rest: 6, tense: 4, cycles: 4, prompt: 'CLENCH',
+         hint: 'clench your jaw firmly, not painfully', alert: 'jaw clenching' },
+  shoulder: { label: 'SHOULDER', chip: 'SHLD', rest: 7, tense: 7, cycles: 4, prompt: 'SHRUG',
+              hint: 'raise and tense your shoulders, hold it', alert: 'shoulder tension' },
+};
+const PROTO_NAMES = Object.keys(PROTOCOLS);
+const LEAD_S = 3.0, SKIP_S = 1.3;
+const TONES = {
+  jaw: [[880, 110], [660, 170]], shoulder: [[523, 110], [392, 220]], tense: [[988, 80]], rest: [[440, 80]],
+  done: [[660, 90], [880, 140]], fail: [[300, 260]], block: [[740, 100]],
+  trial_done: [[660, 90], [880, 90], [1100, 170]], trial_cancel: [[330, 200], [250, 250]],
+  contact_lost: [[420, 160], [320, 160], [420, 160]], contact_ok: [[700, 90], [950, 120]], rate: [[620, 70], [820, 90]],
+};
+const PALETTE = ['#00d4ff', '#ffd84a', '#3dff9a', '#ff5a5f', '#8a6bff', '#ff9f4a'];
+const MENU_ROWS = ['units', 'bg', 'raw', 'jaw', 'shoulder', 'trial', 'rate', 'rate_every', 'note', 'mute', 'save', 'files', 'quit'];
+const COOLDOWN = 8.0;                 // seconds between repeat alerts while tension continues
+const TENSION_KEY = 'muse_tension.json';
+
+/* ================================================================ built-in trial */
+const BUILTIN_TRIAL_FILE = 'adhd_baseline_profile.json';
+const BUILTIN_TRIAL = `{
+  "name": "adhd_baseline_profile",
+  "description": "8-minute EEG protocol to measure absolute power across rest states, alpha reactivity, working memory load, and engagement-dependent arousal in an ADHD brain. Includes a 2-minute habituation buffer to attenuate novelty response.",
+  "lead_in_s": 10,
+  "repeat": 1,
+  "blocks": [
+    {"label": "habituation", "instruction": "Sit still, eyes open, stare at the wall. Let yourself settle in. This segment is just to get past the novelty of starting.", "duration_s": 120},
+    {"label": "eyes_open_rest", "instruction": "Stay still, eyes open, stare at a fixed point on the wall. Don't try to focus on anything. Just exist.", "duration_s": 60, "color": "#4a90d9"},
+    {"label": "transition", "instruction": "Close your eyes gently. Keep them closed until you hear the next tone.", "duration_s": 5, "sound": true},
+    {"label": "eyes_closed_rest", "instruction": "Eyes closed, relaxed. Don't try to think about anything specific. Just rest.", "duration_s": 90, "color": "#7b68ee"},
+    {"label": "transition", "instruction": "Keep your eyes closed. Start counting backward from 200 by 7s when you hear the tone.", "duration_s": 5, "sound": true},
+    {"label": "serial_7s", "instruction": "Eyes closed. Count backward silently: 200, 193, 186, 179... Don't worry about mistakes, just keep going.", "duration_s": 90, "color": "#e85d75"},
+    {"label": "transition", "instruction": "Stop counting. Open your eyes. Pick up your phone and open something boring.", "duration_s": 10, "sound": true},
+    {"label": "boring_reading", "instruction": "Read something genuinely dull on your phone. Terms of service, tax code, municipal bond Wikipedia. Let yourself zone out.", "duration_s": 120, "color": "#8a8a8a"},
+    {"label": "transition", "instruction": "Switch to something interesting now. A topic you actually care about.", "duration_s": 10, "sound": true},
+    {"label": "interesting_reading", "instruction": "Read or watch something that genuinely engages you. Let yourself get absorbed.", "duration_s": 120, "color": "#50c878"}
+  ]
+}
+`;
+
+const TRIAL_FORMAT = `Trial files are JSON:
+{
+  "name": "blink_test",                       (optional; defaults to the file name)
+  "description": "what this trial is for",     (optional, copied into the export)
+  "lead_in_s": 5,                              (optional "get ready" time, default 5)
+  "repeat": 1,                                 (optional, run the whole block list this many times)
+  "shuffle": false,                            (optional, new random block order for every repeat, so
+                                                time-on-task doesn't line up with one condition)
+  "seed": 7,                                   (optional, makes the shuffle repeatable; the seed used is
+                                                always saved in the export)
+  "gap_s": 0,                                  (optional, seconds of "relax" inserted between blocks)
+  "blocks": [
+    {"label": "rest",  "instruction": "Sit still, eyes open", "duration_s": 20},
+    {"label": "blink", "instruction": "Blink repeatedly, about once a second", "duration_s": 15,
+     "color": "#ffd84a", "sound": true}        (color and sound are optional)
+  ]
+}`;
+const TRIAL_NOTE = `Time only counts toward a block while both forehead sensors have good contact. If contact
+is lost the clock stops (the data is labelled contact_pause) and resumes after contact has been
+steady for a few seconds, so every block still gets its full duration of usable data.`;
+
+/* ================================================================ small helpers */
+const now = () => Date.now() / 1000;
+const sleep = ms => new Promise(r => setTimeout(r, ms));
+const $ = id => document.getElementById(id);
+
+function errText(e) {
+  if (e == null) return String(e);
+  if (typeof e === 'string') return e;
+  return [e.name, e.message].filter(Boolean).join(': ') || String(e);
+}
+function pad(n, w = 2) { return String(n).padStart(w, '0'); }
+function isoLocal(t, spec) {            // datetime.fromtimestamp(t).isoformat(timespec=...)
+  const d = new Date(t * 1000);
+  let s = `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}T${pad(d.getHours())}:${pad(d.getMinutes())}:${pad(d.getSeconds())}`;
+  if (spec === 'ms') s += '.' + pad(d.getMilliseconds(), 3);
+  return s;
+}
+function stampName(t) {                 // %Y-%m-%d_%H-%M-%S
+  const d = new Date(t * 1000);
+  return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}_${pad(d.getHours())}-${pad(d.getMinutes())}-${pad(d.getSeconds())}`;
+}
+function stampCompact(t) {              // %Y%m%d-%H%M%S
+  const d = new Date(t * 1000);
+  return `${d.getFullYear()}${pad(d.getMonth() + 1)}${pad(d.getDate())}-${pad(d.getHours())}${pad(d.getMinutes())}${pad(d.getSeconds())}`;
+}
+function csvField(v) {                  // Python csv QUOTE_MINIMAL
+  if (v === null || v === undefined) return '';
+  let s = String(v);
+  if (/[",\r\n]/.test(s)) s = '"' + s.replace(/"/g, '""') + '"';
+  return s;
+}
+const csvLine = arr => arr.map(csvField).join(',') + '\r\n';
+function fmtG(v, p) {                   // Python format(v, '.{p}g')
+  if (!isFinite(v)) return Number.isNaN(v) ? 'nan' : (v > 0 ? 'inf' : '-inf');
+  if (v === 0) return '0';
+  const ex = v.toExponential(p - 1);
+  const exp = parseInt(ex.split('e')[1], 10);
+  const strip = s => (s.includes('.') ? s.replace(/0+$/, '').replace(/\.$/, '') : s);
+  if (exp < -4 || exp >= p) {
+    const [m, e] = ex.split('e');
+    const n = parseInt(e, 10);
+    return strip(m) + 'e' + (n < 0 ? '-' : '+') + pad(Math.abs(n));
+  }
+  return strip(v.toFixed(Math.max(0, p - 1 - exp)));
+}
+function pyRepr(v, floats = false) {    // enough of Python's repr() for event texts
+  if (v === null || v === undefined) return 'None';
+  if (v === true) return 'True';
+  if (v === false) return 'False';
+  if (typeof v === 'number') return floats && Number.isInteger(v) ? v.toFixed(1) : String(v);
+  if (typeof v === 'string') return "'" + v.replace(/\\/g, '\\\\').replace(/'/g, "\\'") + "'";
+  if (Array.isArray(v)) return '[' + v.map(x => pyRepr(x, floats)).join(', ') + ']';
+  return '{' + Object.entries(v).map(([k, x]) => pyRepr(k) + ': ' + pyRepr(x, floats)).join(', ') + '}';
+}
+function hexRgb(c) { return [1, 3, 5].map(i => parseInt(c.slice(i, i + 2), 16)); }
+function mix(c1, c2, t) {
+  const a = hexRgb(c1), b = hexRgb(c2);
+  return '#' + [0, 1, 2].map(i => Math.trunc(a[i] + (b[i] - a[i]) * t).toString(16).padStart(2, '0')).join('');
+}
+function bytesHex(u8) { let s = ''; for (let i = 0; i < u8.length; i++) s += u8[i].toString(16).padStart(2, '0'); return s; }
+function dvBytes(dv) { return new Uint8Array(dv.buffer.slice(dv.byteOffset, dv.byteOffset + dv.byteLength)); }
+
+/* ================================================================ numerics (numpy equivalents) */
+function hanning(n) {                   // np.hanning
+  const w = new Float64Array(n);
+  if (n === 1) { w[0] = 1; return w; }
+  for (let i = 0; i < n; i++) w[i] = 0.5 - 0.5 * Math.cos(2 * Math.PI * i / (n - 1));
+  return w;
+}
+function fft(re, im) {                  // radix-2, in place
+  const n = re.length;
+  for (let i = 1, j = 0; i < n; i++) {
+    let bit = n >> 1;
+    while (j & bit) { j ^= bit; bit >>= 1; }
+    j ^= bit;
+    if (i < j) { let t = re[i]; re[i] = re[j]; re[j] = t; t = im[i]; im[i] = im[j]; im[j] = t; }
+  }
+  for (let len = 2; len <= n; len *= 2) {
+    const ang = -2 * Math.PI / len, wR = Math.cos(ang), wI = Math.sin(ang), half = len >> 1;
+    for (let i = 0; i < n; i += len) {
+      let cR = 1, cI = 0;
+      for (let j = 0; j < half; j++) {
+        const k = i + j, m = k + half;
+        const tR = cR * re[m] - cI * im[m], tI = cR * im[m] + cI * re[m];
+        re[m] = re[k] - tR; im[m] = im[k] - tI; re[k] += tR; im[k] += tI;
+        const nr = cR * wR - cI * wI; cI = cR * wI + cI * wR; cR = nr;
+      }
+    }
+  }
+}
+function rfftPow(x) {                   // |np.fft.rfft(x)|**2
+  const n = x.length, re = Float64Array.from(x), im = new Float64Array(n);
+  fft(re, im);
+  const P = new Float64Array(n / 2 + 1);
+  for (let k = 0; k <= n / 2; k++) P[k] = re[k] * re[k] + im[k] * im[k];
+  return P;
+}
+function detrend(x) {                   // x - np.polyval(np.polyfit(t, x, 1), t)
+  const n = x.length, tm = (n - 1) / 2;
+  let xm = 0;
+  for (let i = 0; i < n; i++) xm += x[i];
+  xm /= n;
+  let num = 0, den = 0;
+  for (let i = 0; i < n; i++) { const d = i - tm; num += d * (x[i] - xm); den += d * d; }
+  const s = num / den, out = new Float64Array(n);
+  for (let i = 0; i < n; i++) out[i] = x[i] - (xm + s * (i - tm));
+  return out;
+}
+function bandlimit(x, lo, hi) {         // rfft, zero bins outside [lo, hi] Hz, irfft
+  const n = x.length, re = Float64Array.from(x), im = new Float64Array(n);
+  fft(re, im);
+  for (let k = 0; k < n; k++) {
+    const f = (k <= n / 2 ? k : n - k) * FS / n;
+    if (f < lo || f > hi) { re[k] = 0; im[k] = 0; }
+    im[k] = -im[k];
+  }
+  fft(re, im);
+  for (let k = 0; k < n; k++) re[k] /= n;
+  return re;
+}
+function hasNaN(x) { for (let i = 0; i < x.length; i++) if (x[i] !== x[i]) return true; return false; }
+function amean(a) { let s = 0; for (let i = 0; i < a.length; i++) s += a[i]; return s / a.length; }
+function median(a) {
+  const s = Float64Array.from(a).sort(), n = s.length;
+  return n % 2 ? s[(n - 1) / 2] : (s[n / 2 - 1] + s[n / 2]) / 2;
+}
+function percentile(a, q) {             // np.percentile, linear
+  const s = Float64Array.from(a).sort(), pos = (s.length - 1) * q / 100;
+  const lo = Math.floor(pos), hi = Math.ceil(pos);
+  return s[lo] + (s[hi] - s[lo]) * (pos - lo);
+}
+function pstd(a) { const m = amean(a); let s = 0; for (let i = 0; i < a.length; i++) s += (a[i] - m) ** 2; return Math.sqrt(s / a.length); }
+function colStats(M) {                  // mean(0), std(0) of an (n, d) list of rows
+  const n = M.length, d = M[0].length, mu = new Float64Array(d), sd = new Float64Array(d);
+  for (const r of M) for (let j = 0; j < d; j++) mu[j] += r[j];
+  for (let j = 0; j < d; j++) mu[j] /= n;
+  for (const r of M) for (let j = 0; j < d; j++) sd[j] += (r[j] - mu[j]) ** 2;
+  for (let j = 0; j < d; j++) sd[j] = Math.sqrt(sd[j] / n);
+  return [mu, sd];
+}
+function covRows(Z) {                   // np.cov(Z.T), ddof 1
+  const n = Z.length, d = Z[0].length, [m] = colStats(Z);
+  const C = Array.from({ length: d }, () => new Float64Array(d));
+  for (const r of Z) for (let i = 0; i < d; i++) { const a = r[i] - m[i]; for (let j = i; j < d; j++) C[i][j] += a * (r[j] - m[j]); }
+  for (let i = 0; i < d; i++) for (let j = i; j < d; j++) { C[i][j] /= (n - 1); C[j][i] = C[i][j]; }
+  return C;
+}
+function solve(A0, b0) {                // np.linalg.solve, Gaussian elimination with partial pivoting
+  const n = b0.length, A = A0.map(r => Float64Array.from(r)), b = Float64Array.from(b0);
+  for (let c = 0; c < n; c++) {
+    let p = c;
+    for (let r = c + 1; r < n; r++) if (Math.abs(A[r][c]) > Math.abs(A[p][c])) p = r;
+    if (A[p][c] === 0) throw new Error('Singular matrix');
+    [A[c], A[p]] = [A[p], A[c]]; [b[c], b[p]] = [b[p], b[c]];
+    for (let r = c + 1; r < n; r++) {
+      const f = A[r][c] / A[c][c];
+      if (f === 0) continue;
+      for (let k = c; k < n; k++) A[r][k] -= f * A[c][k];
+      b[r] -= f * b[c];
+    }
+  }
+  const x = new Float64Array(n);
+  for (let r = n - 1; r >= 0; r--) {
+    let s = b[r];
+    for (let k = r + 1; k < n; k++) s -= A[r][k] * x[k];
+    x[r] = s / A[r][r];
+  }
+  return x;
+}
+function dot(a, b) { let s = 0; for (let i = 0; i < a.length; i++) s += a[i] * b[i]; return s; }
+let _g2 = null;
+function gauss() {                      // standard normal (Box-Muller)
+  if (_g2 !== null) { const v = _g2; _g2 = null; return v; }
+  let u = 0; while (u === 0) u = Math.random();
+  const r = Math.sqrt(-2 * Math.log(u)), th = 2 * Math.PI * Math.random();
+  _g2 = r * Math.sin(th);
+  return r * Math.cos(th);
+}
+
+/* Python's random.Random (MT19937 + random.shuffle), so a shuffled trial with a given seed runs
+   the same block order as muse_focus.py */
+class PyRandom {
+  constructor(seed) { this.mt = new Uint32Array(624); this.mti = 625; this.seed(seed); }
+  init_genrand(s) {
+    const mt = this.mt;
+    mt[0] = s >>> 0;
+    for (let i = 1; i < 624; i++) { const p = mt[i - 1] ^ (mt[i - 1] >>> 30); mt[i] = (Math.imul(1812433253, p) + i) >>> 0; }
+    this.mti = 624;
+  }
+  init_by_array(key) {
+    const mt = this.mt;
+    this.init_genrand(19650218);
+    let i = 1, j = 0;
+    for (let k = Math.max(624, key.length); k; k--) {
+      const p = mt[i - 1] ^ (mt[i - 1] >>> 30);
+      mt[i] = ((mt[i] ^ Math.imul(p, 1664525)) + key[j] + j) >>> 0;
+      i++; j++;
+      if (i >= 624) { mt[0] = mt[623]; i = 1; }
+      if (j >= key.length) j = 0;
+    }
+    for (let k = 623; k; k--) {
+      const p = mt[i - 1] ^ (mt[i - 1] >>> 30);
+      mt[i] = ((mt[i] ^ Math.imul(p, 1566083941)) - i) >>> 0;
+      i++;
+      if (i >= 624) { mt[0] = mt[623]; i = 1; }
+    }
+    mt[0] = 0x80000000;
+  }
+  seed(n) {
+    n = Math.abs(n);
+    const key = [];
+    if (n === 0) key.push(0);
+    while (n > 0) { key.push(n % 4294967296); n = Math.floor(n / 4294967296); }
+    this.init_by_array(key);
+  }
+  genrand() {
+    const mt = this.mt;
+    if (this.mti >= 624) {
+      for (let kk = 0; kk < 624; kk++) {
+        const y = (mt[kk] & 0x80000000) | (mt[(kk + 1) % 624] & 0x7fffffff);
+        mt[kk] = mt[(kk + 397) % 624] ^ (y >>> 1) ^ ((y & 1) ? 0x9908b0df : 0);
+      }
+      this.mti = 0;
+    }
+    let y = mt[this.mti++];
+    y ^= y >>> 11; y ^= (y << 7) & 0x9d2c5680; y ^= (y << 15) & 0xefc60000; y ^= y >>> 18;
+    return y >>> 0;
+  }
+  randbelow(n) {
+    const k = n.toString(2).length;
+    let r = this.genrand() >>> (32 - k);
+    while (r >= n) r = this.genrand() >>> (32 - k);
+    return r;
+  }
+  shuffle(x) {
+    for (let i = x.length - 1; i > 0; i--) { const j = this.randbelow(i + 1); [x[i], x[j]] = [x[j], x[i]]; }
+  }
+}
+
+/* ================================================================ FocusEngine (muse_focus.py) */
+class RingBuf {                         // deque(maxlen=n) of floats
+  constructor(n) { this.a = new Float64Array(n); this.n = n; this.len = 0; this.pos = 0; }
+  push(v) { this.a[this.pos] = v; this.pos = (this.pos + 1) % this.n; if (this.len < this.n) this.len++; }
+  clear() { this.len = 0; this.pos = 0; }
+  last(m) {
+    const out = new Float64Array(m), s = (this.pos - m + 2 * this.n) % this.n;
+    for (let i = 0; i < m; i++) out[i] = this.a[(s + i) % this.n];
+    return out;
+  }
+}
+
+function decode_eeg_packet(u8) {        // 20 bytes -> [packet_index, 12 samples in microvolts]
+  const index = (u8[0] << 8) | u8[1], s = new Float64Array(12);
+  for (let i = 0, j = 2; i < 12; i += 2, j += 3) {
+    const b0 = u8[j], b1 = u8[j + 1], b2 = u8[j + 2];
+    s[i] = (((b0 << 4) | (b1 >> 4)) - 2048) * UV_PER_BIT;
+    s[i + 1] = ((((b1 & 0x0f) << 8) | b2) - 2048) * UV_PER_BIT;
+  }
+  return [index, s];
+}
+function museCmd(text) {                // length-prefixed, newline-terminated
+  const enc = new TextEncoder().encode(text + '\n'), out = new Uint8Array(enc.length + 1);
+  out[0] = enc.length; out.set(enc, 1);
+  return out;
+}
+
+class FocusEngine {
+  constructor(ptp_limit) {
+    this.hann1 = hanning(FS);
+    this.hann = hanning(WIN);
+    this.hannC = hanning(2 * FS);
+    let s = 0; for (const v of this.hann) s += v * v;
+    this.hannSq = s;
+    this.uv2_norm = 2.0 / (WIN * s);           // spectrum sum -> uV^2
+    let sc = 0; for (const v of this.hannC) sc += v * v;
+    this.contactNorm = 2.0 / (2 * FS * sc);
+    this.emg_hist = {}; this.buf = {}; this.last_idx = {};
+    for (const ch of CH_ORDER) { this.emg_hist[ch] = []; this.buf[ch] = new RingBuf(WIN); this.last_idx[ch] = null; }
+    this.muscle_until = 0; this.muscle_z = 0;
+    this.rec = null;
+    this.pkts = 0; this.rate = 0; this._rate_t = now(); this._rate_n = 0;
+    this.batt = null; this.motion_last = {}; this.last_rx = 0;
+    this.ptp_limit = ptp_limit;
+    this.p2p = {};
+    this.feat_chans = CH_ORDER.slice();
+    this.contact_last = {};
+    this.dropped = 0;
+  }
+  add(ch, index, samples) {
+    this.last_rx = now();
+    this.pkts += 1;
+    const last = this.last_idx[ch];
+    if (last !== null) {
+      const gap = (((index - last - 1) % 65536) + 65536) % 65536;
+      if (gap > 0 && gap < 1000) {                 // lost packets: mark as NaN
+        this.dropped += gap;
+        for (let i = 0; i < 12 * gap; i++) this.buf[ch].push(NaN);
+      }
+    }
+    this.last_idx[ch] = index;
+    for (let i = 0; i < samples.length; i++) this.buf[ch].push(samples[i]);
+  }
+  reset_stream() {
+    for (const ch of CH_ORDER) { this.buf[ch].clear(); this.last_idx[ch] = null; }
+    this.p2p = {};
+  }
+  packet_rate() {
+    const t = now();
+    if (t - this._rate_t >= 1.0) {
+      this.rate = (this.pkts - this._rate_n) / (t - this._rate_t);
+      this._rate_t = t; this._rate_n = this.pkts;
+    }
+    return this.rate;
+  }
+  band_table() {                        // absolute band power (uV^2) per sensor over the last 4 s, or null
+    const out = {}, norm = FS * this.hannSq, df = FS / WIN;
+    let any = false;
+    for (const ch of CH_ORDER) {
+      const b = this.buf[ch];
+      if (b.len === 0) continue;
+      if (b.len < WIN) return null;
+      const x0 = b.last(WIN);
+      if (hasNaN(x0)) return null;
+      const x = detrend(x0);
+      for (let i = 0; i < WIN; i++) x[i] *= this.hann[i];
+      const P = rfftPow(x), d = {};
+      for (const [k, [lo, hi]] of Object.entries(BAND_EDGES)) {
+        let s = 0;
+        for (let i = 0; i < P.length; i++) { const f = i * FS / WIN; if (f >= lo && f < hi) s += 2 * P[i] / norm; }
+        d[k] = s * df;
+      }
+      out[ch] = d; any = true;
+    }
+    return any ? out : null;
+  }
+  contact_check() {                     // clipping or mains hum on the last 2 s of each forehead sensor
+    const n = 2 * FS, w = this.hannC, norm = this.contactNorm, out = {};
+    for (const ch of FOCUS_CH) {
+      const b = this.buf[ch];
+      if (this.last_idx[ch] === null || b.len === 0) {
+        out[ch] = { ok: false, rail: 0, mains: 0, hf: 0, why: 'no data' };
+        continue;
+      }
+      if (b.len < n) return null;
+      const x = b.last(n);
+      if (hasNaN(x)) { out[ch] = { ok: null, rail: 0, mains: 0, hf: 0, why: 'lost packets' }; continue; }
+      let rail = 0;
+      for (let i = 0; i < n; i++) if (Math.abs(x[i]) >= 990) rail++;
+      rail /= n;
+      const m = amean(x), y = new Float64Array(n);
+      for (let i = 0; i < n; i++) y[i] = (x[i] - m) * w[i];
+      const P = rfftPow(y);
+      let ms = 0, hs = 0;
+      for (let k = 0; k < P.length; k++) {
+        const f = k * FS / n, p = P[k] * norm;
+        if (f >= MAINS_HZ - 5 && f <= MAINS_HZ + 5) ms += p;
+        if (f >= 70 && f <= 120) hs += p;
+      }
+      const mains = Math.sqrt(ms), hf = Math.sqrt(hs);
+      const bad = rail >= CONTACT_RAIL_FRAC || (mains > CONTACT_MAINS_UV && mains > 1.5 * hf);
+      out[ch] = { ok: !bad, rail, mains, hf, why: rail >= CONTACT_RAIL_FRAC ? 'clipped' : (bad ? 'mains hum' : '') };
+    }
+    this.contact_last = out;
+    return out;
+  }
+  mark_muscle() { this.muscle_until = Math.max(this.muscle_until, now() + MUSCLE_HOLD); }
+  tension_features() {                  // 12 log band powers from the last 1 s, plus the EMG burst guard
+    const feats = [], emg = {}, used = [];
+    for (const ch of CH_ORDER) {
+      const b = this.buf[ch];
+      if (b.len === 0) continue;
+      if (b.len < FS) return null;
+      const x = b.last(FS);
+      if (hasNaN(x)) return null;
+      const m = amean(x), y = new Float64Array(FS);
+      for (let i = 0; i < FS; i++) y[i] = (x[i] - m) * this.hann1[i];
+      const P = rfftPow(y);
+      const bs = (lo, hi) => { let s = 0; for (let k = 0; k < P.length; k++) if (k >= lo && k < hi) s += P[k]; return s; };
+      for (const [lo, hi] of TENSION_BANDS) feats.push(Math.log10(bs(lo, hi) + 1e-9));
+      emg[ch] = Math.log10(bs(25, 45) + 1e-9);
+      used.push(ch);
+    }
+    let zmax = 0;
+    for (const [ch, v] of Object.entries(emg)) {
+      const h = this.emg_hist[ch];
+      if (h.length >= 40) {
+        const med = median(h);
+        const mad = Math.max(1.4826 * median(h.map(q => Math.abs(q - med))), 0.08);
+        zmax = Math.max(zmax, (v - med) / mad);
+      }
+      h.push(v);
+      if (h.length > 360) h.shift();
+    }
+    this.muscle_z = zmax;
+    if (zmax > EMG_Z) this.muscle_until = Math.max(this.muscle_until, now() + MUSCLE_HOLD);
+    this.feat_chans = used;
+    return FOCUS_CH.every(c => used.includes(c)) ? Float64Array.from(feats) : null;
+  }
+  update() {
+    if (now() < this.muscle_until) return { artifact: true, why: 'muscle tension (jaw/face), focus paused' };
+    const specs = [], bad = [];
+    for (const ch of FOCUS_CH) {
+      const b = this.buf[ch];
+      if (b.len < WIN) return null;
+      const x0 = b.last(WIN);
+      if (hasNaN(x0)) return { artifact: true, why: `lost packets (total ${this.dropped})` };
+      const xf = bandlimit(detrend(x0), 1, 40);    // 1-40 Hz so slow drift doesn't count as an artifact
+      let mn = Infinity, mx = -Infinity;
+      for (let i = WIN - FS - FS / 4; i < WIN - FS / 4; i++) { if (xf[i] < mn) mn = xf[i]; if (xf[i] > mx) mx = xf[i]; }
+      const p2p = mx - mn;
+      this.p2p[ch] = p2p;
+      if (p2p > this.ptp_limit) { bad.push(ch); continue; }
+      const y = new Float64Array(WIN);
+      for (let i = 0; i < WIN; i++) y[i] = xf[i] * this.hann[i];
+      specs.push(rfftPow(y));
+    }
+    if (!specs.length) return { artifact: true, why: `all channels over ${this.ptp_limit.toFixed(0)} uV (poor contact?)` };
+    const spec = new Float64Array(specs[0].length);
+    for (const s of specs) for (let i = 0; i < s.length; i++) spec[i] += s[i] / specs.length;
+    const band = (lo, hi) => { let s = 0; for (let i = 0; i < spec.length; i++) { const f = i * FS / WIN; if (f >= lo && f < hi) s += spec[i]; } return s; };
+    const bands = {};
+    for (const [k, [lo, hi]] of Object.entries(BAND_EDGES)) bands[k] = band(lo, hi);
+    let total = 0; for (const k of BAND_NAMES) total += bands[k];
+    const rel = {}, uv2 = {};
+    let uv2_total = 0;
+    for (const k of BAND_NAMES) { rel[k] = bands[k] / total; uv2[k] = bands[k] * this.uv2_norm; uv2_total += uv2[k]; }
+    return { artifact: false, theta: bands.theta, alpha: bands.alpha, beta: bands.beta, bad, rel, uv2, uv2_total };
+  }
+}
+
+/* ================================================================ TensionDetector */
+class TensionDetector {
+  constructor() { this.p = null; this.quality = {}; this.recent = []; this.active = false; this.last_p = 0.0; }
+  get ready() { return this.p !== null; }
+  static _core(R, T, shrink = 0.3) {
+    const d = R[0].length;
+    const [mu, sd0] = colStats(R);
+    const sd = sd0.map(v => Math.max(v, 0.05));
+    const Zr = R.map(r => r.map((v, j) => (v - mu[j]) / sd[j]));
+    const Zt = T.map(r => r.map((v, j) => (v - mu[j]) / sd[j]));
+    const [mr] = colStats(Zr), [mt] = colStats(Zt);
+    const Cr = covRows(Zr), Ct = covRows(Zt);
+    let Sw = Cr.map((row, i) => row.map((v, j) => (v + Ct[i][j]) / 2));
+    let tr = 0; for (let i = 0; i < d; i++) tr += Sw[i][i];
+    Sw = Sw.map((row, i) => row.map((v, j) => (1 - shrink) * v + (i === j ? shrink * tr / d : 0)));
+    const diff = mt.map((v, j) => v - mr[j]);
+    let w = solve(Sw, diff);
+    const den = dot(diff, w);
+    if (den <= 1e-9) return null;
+    w = w.map(v => v / den);                         // score is about 0 at rest and 1 when tense
+    const b = -dot(mr, w);
+    const pr = Zr.map(z => dot(z, w) + b);
+    const thr = Math.min(0.9, Math.max(0.5, Math.max(0.5, percentile(pr, 97))));
+    return { mu, sd, w, b, thr };
+  }
+  static _score(p, F) { let s = 0; for (let j = 0; j < F.length; j++) s += (F[j] - p.mu[j]) / p.sd[j] * p.w[j]; return s + p.b; }
+  fit(rest, tense) {
+    const pairs = [];
+    for (let i = 0; i < Math.min(rest.length, tense.length); i++) if (rest[i].length > 3 && tense[i].length > 3) pairs.push([rest[i], tense[i]]);
+    this.p = null; this.quality = {};
+    if (pairs.length < 3) { this.quality = { tpr: 0.0, fpr: 1.0, ok: false }; return this.quality; }
+    let tp = 0, nt = 0, fa = 0, nr = 0;
+    for (let i = 0; i < pairs.length; i++) {
+      const [r_i, t_i] = pairs[i];
+      const R = [], T = [];
+      pairs.forEach(([r, t], j) => { if (j !== i) { R.push(...r); T.push(...t); } });
+      const m = TensionDetector._core(R, T);
+      if (m === null) continue;
+      tp += t_i.filter(f => TensionDetector._score(m, f) > m.thr).length; nt += t_i.length;
+      fa += r_i.filter(f => TensionDetector._score(m, f) > m.thr).length; nr += r_i.length;
+    }
+    const tpr = nt ? tp / nt : 0.0, fpr = nr ? fa / nr : 1.0;
+    const final = TensionDetector._core(pairs.flatMap(p => p[0]), pairs.flatMap(p => p[1]));
+    const ok = !!(final !== null && tpr >= 0.8 && fpr <= 0.1);
+    this.quality = { tpr, fpr, ok };
+    this.p = ok ? final : null;
+    this.recent = []; this.active = false;
+    return this.quality;
+  }
+  update(f) {                           // [score, active, just_started]; needs 2 of the last 3 windows
+    if (f.length !== this.p.mu.length) return [this.last_p, false, false];
+    this.last_p = TensionDetector._score(this.p, f);
+    this.recent.push(this.last_p > this.p.thr);
+    if (this.recent.length > 3) this.recent.shift();
+    let started = false;
+    const n = this.recent.filter(Boolean).length;
+    if (!this.active) { if (n >= 2) this.active = started = true; }
+    else if (n === 0) this.active = false;
+    return [this.last_p, this.active, started];
+  }
+  to_dict() {
+    if (!this.ready) return null;
+    const p = this.p;
+    return { mu: Array.from(p.mu), sd: Array.from(p.sd), w: Array.from(p.w), b: p.b, thr: p.thr, quality: this.quality };
+  }
+  load(d) {
+    if (d) {
+      this.p = { mu: Float64Array.from(d.mu), sd: Float64Array.from(d.sd), w: Float64Array.from(d.w), b: +d.b, thr: +d.thr };
+      this.quality = d.quality || {};
+    }
+  }
+}
+
+/* ================================================================ analysis rows, raw panel */
+const COLUMN_DOCS = {
+  'eeg_raw.csv': 'One row per EEG sample at 256 Hz, microvolts (0.48828125 uV per count). t_host is the arrival time of the packet (jittery); t_nominal is first-packet time + sample_n/256 (use it for timing). Blank values mean that sensor\'s packet was lost.',
+  'packets.csv': 'Every Bluetooth notification as received: characteristic and hex bytes, for offline re-decoding.',
+  'motion.csv': 'Accelerometer (g) and gyroscope (deg/s), 3 samples per packet. Scales are community-documented and unverified for the MU-02.',
+  'telemetry.csv': 'Battery and housekeeping values, raw counts plus converted battery percent and fuel-gauge mV.',
+  'analysis.csv': '4 Hz (GUI) or 1 Hz (console) analysis. <sensor>_<band> columns are band power for one sensor over the last 4 s (arbitrary units, comparable within a file); uv2_<band> and uv2_total are calibrated power in uV^2 from the clean forehead sensors; rel_<band> is the share of 1-40 Hz power; contact_* come from a 2 s raw-signal check (clipping, mains hum), hf_uV_* and mains_uV_* are the rms noise behind it; feat01-12 are the tension features (log10 power in 1-4, 20-35, 35-55 Hz for TP9, AF7, AF8, TP10); trial_state is counting or paused; rating is a 1-5 self-rating given at that moment.',
+  'events.log': 'Connections, calibrations, alerts, errors and any text the headband sent.',
+};
+function analysis_fields() {
+  let f = ['t', 'iso', 'status', 'why', 'score', 'index', 'calib_left', 'calib_mu', 'calib_sd',
+           'muscle_z', 'muscle_pause_s', 'dropped', 'pkt_rate', 'battery_pct', 'p2p_AF7', 'p2p_AF8', 'bad'];
+  f = f.concat(['contact', 'contact_AF7', 'contact_AF8', 'hf_uV_AF7', 'hf_uV_AF8', 'mains_uV_AF7', 'mains_uV_AF8']);
+  f = f.concat(BAND_NAMES.map(b => 'rel_' + b), BAND_NAMES.map(b => 'uv2_' + b), ['uv2_total']);
+  f = f.concat(CH_ORDER.flatMap(ch => BAND_NAMES.map(b => `${ch}_${b}`)));
+  for (let i = 0; i < 4 * TENSION_BANDS.length; i++) f.push('feat' + pad(i + 1));
+  return f.concat(['dominant', 'jaw_p', 'jaw_active', 'shoulder_p', 'shoulder_active',
+                   'acc_x', 'acc_y', 'acc_z', 'gyro_x', 'gyro_y', 'gyro_z',
+                   'trial', 'block', 'block_label', 'trial_state', 'trial_counted_s', 'rating']);
+}
+const ANALYSIS_FIELDS = analysis_fields();
+
+function analysis_row(eng, res, feats, bt, extra) {   // focus score is off (report_focus = False)
+  const t = now();
+  const row = { t: t.toFixed(3), iso: isoLocal(t, 'ms') };
+  if (res === null) row.status = 'warmup';
+  else if (res.artifact) { row.status = 'artifact'; row.why = res.why || ''; }
+  else {
+    row.status = 'ok';
+    for (const k of BAND_NAMES) row['rel_' + k] = res.rel[k].toFixed(5);
+    for (const k of BAND_NAMES) row['uv2_' + k] = res.uv2[k].toFixed(4);
+    row.uv2_total = res.uv2_total.toFixed(4);
+    row.bad = res.bad.join('/');
+  }
+  const cl = eng.contact_last, keys = Object.keys(cl);
+  if (keys.length) {
+    row.contact = keys.every(c => cl[c].ok !== false) ? 'ok' : 'lost:' + keys.filter(c => cl[c].ok === false).join('/');
+    for (const c of keys) {
+      row['contact_' + c] = cl[c].ok === true ? 'ok' : (cl[c].ok === false ? 'lost' : 'unknown');
+      row['hf_uV_' + c] = cl[c].hf.toFixed(2);
+      row['mains_uV_' + c] = cl[c].mains.toFixed(2);
+    }
+  }
+  row.muscle_z = eng.muscle_z.toFixed(2);
+  row.muscle_pause_s = Math.max(0, eng.muscle_until - t).toFixed(2);
+  row.dropped = eng.dropped;
+  row.pkt_rate = eng.packet_rate().toFixed(1);
+  row.battery_pct = eng.batt === null ? '' : eng.batt.toFixed(1);
+  for (const ch of FOCUS_CH) if (ch in eng.p2p) row['p2p_' + ch] = eng.p2p[ch].toFixed(1);
+  if (bt) for (const [ch, d] of Object.entries(bt)) for (const [b, v] of Object.entries(d)) row[`${ch}_${b}`] = v.toFixed(4);
+  if (feats) {
+    const k = TENSION_BANDS.length, chans = eng.feat_chans;
+    for (let n = 0; n < feats.length; n++) {
+      const ch = Math.floor(n / k) < chans.length ? chans[Math.floor(n / k)] : null;
+      const i = ch ? CH_ORDER.indexOf(ch) * k + n % k : n;
+      row['feat' + pad(i + 1)] = feats[n].toFixed(4);
+    }
+  }
+  for (const [key, names] of [['acc', ['acc_x', 'acc_y', 'acc_z']], ['gyro', ['gyro_x', 'gyro_y', 'gyro_z']]]) {
+    if (eng.motion_last[key]) names.forEach((n, i) => { row[n] = eng.motion_last[key][i].toFixed(5); });
+  }
+  Object.assign(row, extra || {});
+  return row;
+}
+
+function format_raw(eng, bt, extra) {
+  extra = extra || {};
+  const t = now(), lines = ['uV^2     delta  theta  alpha   beta  gamma'];
+  if (bt) {
+    for (const ch of CH_ORDER) if (bt[ch]) lines.push(ch.padEnd(5) + BAND_NAMES.map(b => bt[ch][b].toFixed(1).padStart(7)).join(''));
+  } else lines.push('(filling 4 s buffer)');
+  const p2p = FOCUS_CH.filter(c => c in eng.p2p).map(c => `${c} ${eng.p2p[c].toFixed(0)}`).join('  ');
+  lines.push(`p2p uV ${p2p || '-'}   EMG z ${eng.muscle_z.toFixed(1)}`);
+  lines.push(`muscle pause ${Math.max(0, eng.muscle_until - t).toFixed(1)} s   dropped ${eng.dropped}   ${eng.packet_rate().toFixed(0)} pkt/s`);
+  const acc = eng.motion_last.acc, gyro = eng.motion_last.gyro;
+  lines.push('battery ' + (eng.batt === null ? '-' : eng.batt.toFixed(0) + '%')
+             + (acc ? '   acc ' + acc.map(v => v.toFixed(2)).join(' ') + ' g' : ''));
+  if (gyro) lines.push('gyro ' + gyro.map(v => v.toFixed(1)).join(' ') + ' deg/s');
+  const ex = Object.entries(extra);
+  if (ex.length) lines.push(ex.map(([k, v]) => `${k} ${v}`).join('   '));
+  return lines.join('\n');
+}
+
+/* ================================================================ SessionRecorder, TrialCapture */
+const EEG_HEADER = ['t_host', 't_nominal', 'packet_idx', 'sample_n', 'k'].concat(CH_ORDER, ['marker']);
+const PKT_HEADER = ['t_host', 'characteristic', 'bytes', 'hex'];
+const MOT_HEADER = ['t_host', 'packet_idx', 'sensor', 'x', 'y', 'z', 'unit'];
+const TEL_HEADER = ['t_host', 'packet_idx', 'battery_raw', 'fuel_raw', 'adc_raw', 'temp_raw', 'battery_pct', 'fuel_mv'];
+
+class TrialCapture {                    // copy of everything recorded while a trial runs
+  constructor() { this.eeg = []; this.pkt = []; this.mot = []; this.tel = []; this.ana = []; this.events = []; }
+}
+
+class SessionRecorder {
+  constructor(meta) {
+    const t = now();
+    this.stamp = stampName(t);
+    this.dir = 'muse_raw/' + this.stamp;
+    this.meta = Object.assign({}, meta || {});
+    this.meta.start = isoLocal(t, 's');
+    this.counts = { eeg_rows: 0, packets: 0, analysis_rows: 0 };
+    this.out = { eeg: [csvLine(EEG_HEADER)], pkt: [csvLine(PKT_HEADER)], mot: [csvLine(MOT_HEADER)],
+                 tel: [csvLine(TEL_HEADER)], ana: [csvLine(ANALYSIS_FIELDS)], evt: [] };
+    this.tap = null;
+    this.markers = [];
+    this.pend = new Map(); this.wraps = 0; this.prev_idx = null; this.base = null; this.t_first = null;
+    this.closed = false;
+    this.trialFiles = [];                       // exported trial folders, included in the session zip
+  }
+  session_json() {
+    const doc = { browser: navigator.userAgent, platform: navigator.platform || '', sample_rate_hz: FS,
+                  uv_per_count: UV_PER_BIT, analysis_window_s: WIN / FS, artifact_ptp_uv: ARTIFACT_PTP_UV,
+                  emg_z: EMG_Z, muscle_hold_s: MUSCLE_HOLD, band_edges_hz: BAND_EDGES, tension_bands_hz: TENSION_BANDS,
+                  channels: CH_ORDER, counts: this.counts, columns: COLUMN_DOCS };
+    return JSON.stringify(Object.assign(doc, this.meta), null, 2);
+  }
+  update_meta(kw) { Object.assign(this.meta, kw); }
+  event(text) {
+    if (this.closed) return;
+    const t = now();
+    this.out.evt.push(`${isoLocal(t, 'ms')} ${text}\n`);
+    if (this.tap) this.tap.events.push([t, text]);
+  }
+  mark(t, text) {                       // lands in the marker column on the first sample at or after t
+    this.markers.push([t, text]);
+    this.event(text);
+  }
+  packet(t, name, data) {
+    if (this.closed) return;
+    const row = [t.toFixed(4), name, String(data.length), bytesHex(data)];
+    this.out.pkt.push(csvLine(row));
+    this.counts.packets += 1;
+    if (this.tap) this.tap.pkt.push(row);
+  }
+  motion(t, sensor, idx, rows, unit) {
+    if (this.closed) return;
+    for (const [x, y, z] of rows) {
+      const row = [t.toFixed(4), String(idx), sensor, x.toFixed(6), y.toFixed(6), z.toFixed(6), unit];
+      this.out.mot.push(csvLine(row));
+      if (this.tap) this.tap.mot.push(row);
+    }
+  }
+  telemetry(t, idx, raws, batt, fuel) {
+    if (this.closed) return;
+    const row = [t.toFixed(4), String(idx)].concat(raws.map(String), [batt.toFixed(2), fuel.toFixed(1)]);
+    this.out.tel.push(csvLine(row));
+    if (this.tap) this.tap.tel.push(row);
+  }
+  _write_entry(e) {
+    for (let k = 0; k < 12; k++) {
+      const sn = e.un * 12 + k;
+      const vals = CH_ORDER.map(ch => (e.s[ch] ? e.s[ch][k].toFixed(4) : ''));
+      const t_nom = this.t_first + (sn - this.base * 12) / FS;
+      const marks = [];
+      while (this.markers.length && this.markers[0][0] <= t_nom) marks.push(this.markers.shift()[1]);
+      const row = [e.t.toFixed(4), t_nom.toFixed(4), String(e.idx), String(sn), String(k)].concat(vals, [marks.join(' | ')]);
+      this.out.eeg.push(csvLine(row));
+      if (this.tap) this.tap.eeg.push(row);
+    }
+    this.counts.eeg_rows += 12;
+  }
+  eeg(ch, idx, samples, t) {            // merge the four per-sensor packets sharing an index into rows
+    if (this.closed) return;
+    let e = this.pend.get(idx);
+    if (!e) {
+      if (this.prev_idx !== null && idx < this.prev_idx - 30000) this.wraps += 1;   // 16-bit counter rolled over
+      this.prev_idx = idx;
+      const un = this.wraps * 65536 + idx;
+      if (this.base === null) { this.base = un; this.t_first = t; }
+      e = { idx, un, t, s: {} };
+      this.pend.set(idx, e);
+    }
+    e.s[ch] = samples;
+    e.t = t;
+    // write in sample order; give up on a missing sensor after 8 newer packets (about 0.4 s)
+    while (this.pend.size) {
+      let key = null, oldest = null;
+      for (const [k, v] of this.pend) if (!oldest || v.un < oldest.un) { oldest = v; key = k; }
+      if (CH_ORDER.every(c => c in oldest.s) || this.pend.size > 8) { this.pend.delete(key); this._write_entry(oldest); }
+      else break;
+    }
+  }
+  analysis(row) {
+    if (this.closed) return;
+    this.out.ana.push(csvLine(ANALYSIS_FIELDS.map(f => (f in row ? row[f] : ''))));
+    this.counts.analysis_rows += 1;
+    if (this.tap) this.tap.ana.push(Object.assign({}, row));
+  }
+  close(meta) {
+    if (this.closed) return;
+    const left = Array.from(this.pend.values()).sort((a, b) => a.un - b.un);
+    for (const e of left) this._write_entry(e);
+    this.pend.clear();
+    Object.assign(this.meta, meta || {});
+    this.meta.end = isoLocal(now(), 's');
+    this.closed = true;
+  }
+  files() {
+    return [{ path: 'eeg_raw.csv', data: this.out.eeg }, { path: 'packets.csv', data: this.out.pkt },
+            { path: 'motion.csv', data: this.out.mot }, { path: 'telemetry.csv', data: this.out.tel },
+            { path: 'analysis.csv', data: this.out.ana }, { path: 'events.log', data: this.out.evt },
+            { path: 'session.json', data: this.session_json() }];
+  }
+}
+
+/* ================================================================ trials */
+function pyFloat(v) {
+  if (typeof v === 'number') return v;
+  if (typeof v === 'boolean') return v ? 1 : 0;
+  if (typeof v === 'string' && v.trim() !== '' && !isNaN(Number(v.trim()))) return Number(v.trim());
+  throw new TypeError('not a number');
+}
+function pyInt(v) {
+  if (typeof v === 'number' && isFinite(v)) return Math.trunc(v);
+  if (typeof v === 'boolean') return v ? 1 : 0;
+  if (typeof v === 'string' && /^\s*[-+]?\d+\s*$/.test(v)) return parseInt(v, 10);
+  throw new TypeError('not a whole number');
+}
+function pyTruthy(v) {
+  if (v === null || v === undefined || v === false || v === 0 || v === '') return false;
+  if (Array.isArray(v)) return v.length > 0;
+  if (typeof v === 'object') return Object.keys(v).length > 0;
+  return true;
+}
+function pyStr(v) {
+  if (v === null || v === undefined) return 'None';
+  if (v === true) return 'True';
+  if (v === false) return 'False';
+  if (typeof v === 'object') return JSON.stringify(v);
+  return String(v);
+}
+const isPlainObj = v => v !== null && typeof v === 'object' && !Array.isArray(v);
+
+function load_trial(text, filename) {   // read and validate a trial file; throws Error with a readable message
+  let d;
+  try { d = JSON.parse(text); } catch (e) { throw new Error(`can't read ${filename}: ${e.message}`); }
+  if (!isPlainObj(d) || !Array.isArray(d.blocks) || !d.blocks.length) throw new Error('the file needs a non-empty "blocks" list');
+  d.name = pyStr(pyTruthy(d.name) ? d.name : filename.replace(/\.[^.]*$/, ''));
+  try {
+    d.lead_in_s = pyFloat('lead_in_s' in d ? d.lead_in_s : 5);
+    d.repeat = pyInt('repeat' in d ? d.repeat : 1);
+    d.gap_s = pyFloat('gap_s' in d ? d.gap_s : 0);
+    d.shuffle = pyTruthy('shuffle' in d ? d.shuffle : false);
+    d.seed = (d.seed === undefined || d.seed === null) ? null : pyInt(d.seed);
+  } catch (e) {
+    throw new Error('"lead_in_s" and "gap_s" must be numbers, "repeat" and "seed" whole numbers');
+  }
+  if (d.lead_in_s < 0 || d.repeat < 1 || d.gap_s < 0) throw new Error('"lead_in_s" and "gap_s" must be >= 0 and "repeat" >= 1');
+  d.blocks.forEach((b, j) => {
+    const i = j + 1;
+    if (!isPlainObj(b)) throw new Error(`block ${i} must be an object`);
+    try { b.duration_s = pyFloat('duration_s' in b ? b.duration_s : 0); }
+    catch (e) { throw new Error(`block ${i}: duration_s must be a number`); }
+    if (!(b.duration_s > 0)) throw new Error(`block ${i}: duration_s must be greater than 0`);
+    if (!('label' in b)) b.label = `block${i}`;
+    if (!('instruction' in b)) b.instruction = pyStr(b.label);
+  });
+  return d;
+}
+
+function plan_trial(d) {                // flatten blocks (repeats, optional shuffle and gaps) into the run order
+  let seed = d.seed;
+  if (seed === null || seed === undefined) {
+    if (d.shuffle) { const a = new Uint32Array(1); crypto.getRandomValues(a); seed = 1 + (a[0] % 999999); }
+    else seed = 0;
+  }
+  d.seed_used = seed;
+  const rng = new PyRandom(seed), plan = [];
+  for (let c = 0; c < d.repeat; c++) {
+    const blocks = d.blocks.slice();
+    if (d.shuffle) rng.shuffle(blocks);
+    for (const b of blocks) {
+      if (d.gap_s > 0 && plan.length) {
+        plan.push({ block: plan.length, cycle: c + 1, label: 'transition', instruction: 'Relax',
+                    duration_s: d.gap_s, color: '#555555', sound: false });
+      }
+      plan.push({ block: plan.length, cycle: c + 1, label: pyStr(b.label), instruction: pyStr(b.instruction),
+                  duration_s: b.duration_s, color: b.color === undefined ? null : b.color,
+                  sound: pyTruthy('sound' in b ? b.sound : true) });
+    }
+  }
+  return plan;
+}
+
+const SUMMARY_COLS = ['muscle_z', 'p2p_AF7', 'p2p_AF8', 'hf_uV_AF7', 'hf_uV_AF8', 'jaw_p', 'shoulder_p', 'uv2_total']
+  .concat(BAND_NAMES.map(b => 'rel_' + b), BAND_NAMES.map(b => 'uv2_' + b), CH_ORDER.flatMap(ch => BAND_NAMES.map(b => `${ch}_${b}`)));
+
+function bisectRight(a, x) { let lo = 0, hi = a.length; while (lo < hi) { const m = (lo + hi) >> 1; if (x < a[m]) hi = m; else lo = m + 1; } return lo; }
+const pyFloatStr = v => (typeof v === 'number' && Number.isInteger(v) ? v.toFixed(1) : String(v));
+
+function export_trial(tap, timeline, meta) {   // one trial's data, labelled by block, as a list of files
+  const t_lo = timeline[0].t_start, t_hi = timeline[timeline.length - 1].t_end;
+  const starts = timeline.map(b => b.t_start);
+  const seg_of = t => Math.max(0, bisectRight(starts, t) - 1);
+  const nseg = timeline.length;
+  const counts = {}, names = [], files = [];
+  const per_eeg = Array.from({ length: nseg }, () => []);
+  const per_ana = Array.from({ length: nseg }, () => Object.fromEntries(SUMMARY_COLS.map(c => [c, []])));
+  const per_nana = new Array(nseg).fill(0);
+
+  const dump = (name, header, rows, tcol, collect) => {
+    const lines = [csvLine(header.concat(['block', 'block_label', 'segment']))];
+    let n = 0;
+    for (const r of rows) {
+      const t = parseFloat(r[tcol]);
+      if (t < t_lo || t > t_hi) continue;
+      const i = seg_of(t), b = timeline[i];
+      lines.push(csvLine(r.concat([b.block, b.label, i])));
+      if (collect) collect(i, r);
+      n++;
+    }
+    counts[name] = n; names.push(name); files.push({ path: name, data: lines });
+  };
+  dump('eeg_raw.csv', EEG_HEADER, tap.eeg, 1, (i, r) => per_eeg[i].push(r.slice(5, 5 + CH_ORDER.length).map(v => (v === '' ? NaN : parseFloat(v)))));
+  dump('packets.csv', PKT_HEADER, tap.pkt, 0);
+  dump('motion.csv', MOT_HEADER, tap.mot, 0);
+  dump('telemetry.csv', TEL_HEADER, tap.tel, 0);
+
+  const ana = [csvLine(ANALYSIS_FIELDS)];
+  let n = 0;
+  for (const row0 of tap.ana) {
+    const t = parseFloat(row0.t);
+    if (t < t_lo || t > t_hi) continue;
+    const i = seg_of(t), b = timeline[i];
+    const row = Object.assign({}, row0, { block: b.block, block_label: b.label, trial: meta.name || '' });
+    ana.push(csvLine(ANALYSIS_FIELDS.map(f => (f in row ? row[f] : ''))));
+    n++;
+    per_nana[i] += 1;
+    for (const c of SUMMARY_COLS) {
+      const v = row[c];
+      if (v !== undefined && v !== null && v !== '') { const x = parseFloat(v); if (!Number.isNaN(x)) per_ana[i][c].push(x); }
+    }
+  }
+  counts['analysis.csv'] = n; names.push('analysis.csv'); files.push({ path: 'analysis.csv', data: ana });
+
+  const ev = [];
+  for (const [t, text] of tap.events) if (t >= t_lo - 0.01 && t <= t_hi + 0.01) ev.push(`${isoLocal(t, 'ms')} ${text}\n`);
+  names.push('events.log'); files.push({ path: 'events.log', data: ev });
+
+  const sum = [csvLine(['segment', 'block', 'label', 'cycle', 'instruction', 'planned_s', 'actual_s', 'eeg_samples', 'analysis_rows']
+    .concat(CH_ORDER.flatMap(ch => ['std', 'ptp'].map(m => `${ch}_${m}_uV`)), SUMMARY_COLS.map(c => 'mean_' + c)))];
+  timeline.forEach((b, si) => {
+    const X = per_eeg[si], stats = [];
+    for (let j = 0; j < CH_ORDER.length; j++) {
+      const col = X.map(r => r[j]).filter(v => !Number.isNaN(v));
+      if (col.length) {
+        let mn = Infinity, mx = -Infinity;
+        for (const v of col) { if (v < mn) mn = v; if (v > mx) mx = v; }
+        stats.push(pstd(col).toFixed(3), (mx - mn).toFixed(3));
+      } else stats.push('', '');
+    }
+    const means = SUMMARY_COLS.map(c => (per_ana[si][c].length ? fmtG(amean(per_ana[si][c]), 5) : ''));
+    const planned = b.planned_s === undefined ? '' : (b.block === -2 ? String(b.planned_s) : pyFloatStr(b.planned_s));
+    sum.push(csvLine([si, b.block, b.label, b.cycle === undefined ? '' : b.cycle, b.instruction === undefined ? '' : b.instruction,
+                      planned, (b.t_end - b.t_start).toFixed(2), X.length, per_nana[si]].concat(stats, means)));
+  });
+  names.push('summary.csv'); files.push({ path: 'summary.csv', data: sum });
+
+  const doc = Object.assign({}, meta, {
+    format: 'muse-trial-export/1', sample_rate_hz: FS, channels: CH_ORDER,
+    t_start: t_lo, t_end: t_hi, duration_s: Math.round((t_hi - t_lo) * 1000) / 1000,
+    start_iso: isoLocal(t_lo, 'ms'), end_iso: isoLocal(t_hi, 'ms'),
+    timeline, row_counts: counts, files: names.concat(['trial.json']),
+    note: 'Block boundaries for EEG rows come from sample timestamps (t_nominal); expect 0.1-0.3 s of Bluetooth latency. Block -1 is the lead-in before the first block. Block -2 (contact_pause) is time when a forehead sensor had lost contact: it is not counted toward any block, and the block resumes afterwards as a new segment. Every analysis and EEG row carries its segment number.',
+  });
+  files.push({ path: 'trial.json', data: JSON.stringify(doc, null, 2) });
+  return { files, counts };
+}
+
+/* ================================================================ zip, downloads, browser storage */
+const CRC_TABLE = (() => {
+  const t = new Uint32Array(256);
+  for (let n = 0; n < 256; n++) { let c = n; for (let k = 0; k < 8; k++) c = c & 1 ? 0xedb88320 ^ (c >>> 1) : c >>> 1; t[n] = c >>> 0; }
+  return t;
+})();
+function crc32(u8) { let c = 0xffffffff; for (let i = 0; i < u8.length; i++) c = CRC_TABLE[(c ^ u8[i]) & 0xff] ^ (c >>> 8); return (c ^ 0xffffffff) >>> 0; }
+
+async function makeZip(files) {         // [{path, data: string | string[] | Uint8Array}] -> Blob (stored, no compression)
+  const enc = new TextEncoder(), parts = [], central = [];
+  const d = new Date();
+  const dosT = (d.getHours() << 11) | (d.getMinutes() << 5) | (d.getSeconds() >> 1);
+  const dosD = ((d.getFullYear() - 1980) << 9) | ((d.getMonth() + 1) << 5) | d.getDate();
+  let offset = 0;
+  for (const f of files) {
+    let bytes;
+    if (typeof f.data === 'string') bytes = enc.encode(f.data);
+    else if (Array.isArray(f.data)) bytes = new Uint8Array(await new Blob(f.data).arrayBuffer());
+    else bytes = f.data;
+    const name = enc.encode(f.path), crc = crc32(bytes);
+    const lh = new DataView(new ArrayBuffer(30));
+    lh.setUint32(0, 0x04034b50, true); lh.setUint16(4, 20, true); lh.setUint16(6, 0x0800, true); lh.setUint16(8, 0, true);
+    lh.setUint16(10, dosT, true); lh.setUint16(12, dosD, true); lh.setUint32(14, crc, true);
+    lh.setUint32(18, bytes.length, true); lh.setUint32(22, bytes.length, true); lh.setUint16(26, name.length, true); lh.setUint16(28, 0, true);
+    parts.push(lh.buffer, name, bytes);
+    const ch = new DataView(new ArrayBuffer(46));
+    ch.setUint32(0, 0x02014b50, true); ch.setUint16(4, 20, true); ch.setUint16(6, 20, true); ch.setUint16(8, 0x0800, true);
+    ch.setUint16(10, 0, true); ch.setUint16(12, dosT, true); ch.setUint16(14, dosD, true); ch.setUint32(16, crc, true);
+    ch.setUint32(20, bytes.length, true); ch.setUint32(24, bytes.length, true); ch.setUint16(28, name.length, true);
+    ch.setUint16(30, 0, true); ch.setUint16(32, 0, true); ch.setUint16(34, 0, true); ch.setUint16(36, 0, true);
+    ch.setUint32(38, 0, true); ch.setUint32(42, offset, true);
+    central.push(ch.buffer, name);
+    offset += 30 + name.length + bytes.length;
+  }
+  let cdSize = 0;
+  for (const c of central) cdSize += c.byteLength;
+  const end = new DataView(new ArrayBuffer(22));
+  end.setUint32(0, 0x06054b50, true); end.setUint16(8, files.length, true); end.setUint16(10, files.length, true);
+  end.setUint32(12, cdSize, true); end.setUint32(16, offset, true);
+  return new Blob(parts.concat(central, [end.buffer]), { type: 'application/zip' });
+}
+
+const isMobile = () => /iPhone|iPad|iPod|Android/i.test(navigator.userAgent) || (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1);
+async function saveBlob(blob, name) {   // call directly from a tap: iOS needs the user gesture for the share sheet
+  if (isMobile() && navigator.canShare) {
+    try {
+      const file = new File([blob], name, { type: blob.type || 'application/zip' });
+      if (navigator.canShare({ files: [file] })) { await navigator.share({ files: [file], title: name }); return; }
+    } catch (e) { if (e && e.name === 'AbortError') return; }
+  }
+  const url = URL.createObjectURL(blob), a = document.createElement('a');
+  a.href = url; a.download = name;
+  document.body.appendChild(a); a.click(); a.remove();
+  setTimeout(() => URL.revokeObjectURL(url), 60000);
+}
+
+const Store = {                         // saved zips, kept in this browser (IndexedDB)
+  db: null,
+  async open() {
+    if (this.db) return this.db;
+    this.db = await new Promise((res, rej) => {
+      const r = indexedDB.open('muse-bands', 1);
+      r.onupgradeneeded = () => r.result.createObjectStore('files', { keyPath: 'id' });
+      r.onsuccess = () => res(r.result);
+      r.onerror = () => rej(r.error);
+    });
+    return this.db;
+  },
+  async tx(mode, fn) {
+    const db = await this.open();
+    return new Promise((res, rej) => {
+      const tx = db.transaction('files', mode), st = tx.objectStore('files');
+      const out = fn(st);
+      tx.oncomplete = () => res(out && 'result' in out ? out.result : undefined);
+      tx.onerror = () => rej(tx.error);
+    });
+  },
+  put(rec) { return this.tx('readwrite', st => { st.put(rec); }); },
+  list() { return this.tx('readonly', st => st.getAll()); },
+  del(id) { return this.tx('readwrite', st => { st.delete(id); }); },
+};
+async function storeZip(name, kind, blob) {
+  try { await Store.put({ id: Date.now() + '-' + Math.random().toString(36).slice(2, 7), name, kind, created: Date.now(), size: blob.size, blob }); return true; }
+  catch (e) { return false; }
+}
+
+/* ================================================================ sound */
+let audioCtx = null;
+function initAudio() {
+  try {
+    if (!audioCtx) audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+    if (audioCtx.state === 'suspended') audioCtx.resume();
+  } catch (e) {}
+}
+function beep(kind) {
+  try {
+    initAudio();
+    if (!audioCtx) return;
+    let t = audioCtx.currentTime + 0.01;
+    for (const [f, ms] of TONES[kind]) {
+      const o = audioCtx.createOscillator(), g = audioCtx.createGain(), d = ms / 1000;
+      o.frequency.value = f;
+      g.gain.setValueAtTime(0, t);
+      g.gain.linearRampToValueAtTime(0.3, t + 0.005);
+      g.gain.setValueAtTime(0.3, Math.max(t + 0.006, t + d - 0.012));
+      g.gain.linearRampToValueAtTime(0, t + d);
+      o.connect(g); g.connect(audioCtx.destination);
+      o.start(t); o.stop(t + d + 0.02);
+      t += d;
+    }
+  } catch (e) {}
+}
+
+/* ================================================================ the window (muse_focus_gui.py App) */
+function setProp(el, prop, val) {       // touch the DOM only when something changed
+  const c = el._c || (el._c = {});
+  if (c[prop] === val) return;
+  c[prop] = val;
+  if (prop === 'text') el.textContent = val;
+  else if (prop === 'hidden') el.classList.toggle('hidden', val);
+  else if (prop === 'cls') el.className = val;
+  else el.style[prop] = val;
+}
+
+class App {
+  constructor(opts) {
+    this.args = { demo: !!opts.demo, ptp: opts.ptp, mains: opts.mains, note: opts.note || '', rate_every: 5,
+                  cooldown: COOLDOWN, units: 'percent', bg: 'off', fps: 30 };
+    MAINS_HZ = opts.mains;
+    this.device = opts.device || null;
+    this.engine = new FocusEngine(opts.ptp);
+    this.rec = new SessionRecorder({ app: 'web', args: Object.assign({}, this.args) });
+    this.engine.rec = this.rec;
+    this.show_raw = false; this.raw_text = '';
+    const n = HIST_S * HZ + 8;
+    this.histMax = n;
+    this.hist = []; this.thist = [];          // [time, {band: value}, dominant]
+    this.sm = {}; this.sm_t = {};
+    this.dom_p = null; this.dom_t = null;
+    this.disp_rel = {}; this.disp_tot = {};
+    this.on = Object.fromEntries(LAYERS.map(([k]) => [k, true]));
+    this.mode = MODES.indexOf(this.args.bg);
+    this.units = UNITS.indexOf(this.args.units);
+    this.rng = {};
+    this.dt = 0.033; this.last_frame = performance.now();
+    this.last_log = 0; this.last = null;
+    this.ble_msg = 'Starting...';
+    this.stopFlag = false; this.stopWaiters = [];
+    this.menu_open = false;
+    this.contact = { state: 'unknown', bad_since: null, good_since: null, lost: [], lost_at: null, armed: false, last_alert: 0 };
+    this.det = Object.fromEntries(PROTO_NAMES.map(k => [k, new TensionDetector()]));
+    this.tp = Object.fromEntries(PROTO_NAMES.map(k => [k, 0.0]));
+    this.last_alert = Object.fromEntries(PROTO_NAMES.map(k => [k, 0.0]));
+    this.wiz = null; this.trial = null;
+    this.msg = null;
+    this.mute = false;
+    this.flash_until = 0; this.cur_bg = BG;
+    this.load_tension();
+    this.rate_i = RATE_EVERY.includes(this.args.rate_every) ? RATE_EVERY.indexOf(this.args.rate_every) : 2;
+    this.next_rate = now() + RATE_EVERY[this.rate_i] * 60;
+    this.rating = null; this.pending_rating = null;
+    this.notes = [];
+    this.bandLog = [csvLine(['time', 'uv2_total'].concat(BANDS.map(([k]) => 'rel_' + k), BANDS.map(([k]) => 'uv2_' + k), PROTO_NAMES.map(n => n + '_p')))];
+    this.closed = false;
+    this.banner = null;
+  }
+
+  start() {
+    this.build();
+    if (this.args.demo) this.start_demo();
+    else this.ble_loop();
+    if (this.args.note) this.log_note(this.args.note);
+    this.tickT = setTimeout(() => this.tick(), 1000 / HZ);
+    this.rafId = requestAnimationFrame(ts => this.frame(ts));
+    this.wake();
+  }
+
+  async wake() {
+    try { if (navigator.wakeLock && document.visibilityState === 'visible') this.wakeLock = await navigator.wakeLock.request('screen'); } catch (e) {}
+  }
+
+  /* ---------------------------------------------------------------- controls */
+  toggle(key) { this.on[key] = !this.on[key]; }
+  digit(i) {
+    if (this.rating && i >= 1 && i <= 5) this.give_rating(i);
+    else if (i <= LAYERS.length) this.toggle(LAYERS[i - 1][0]);
+  }
+  cycle_bg() { this.mode = (this.mode + 1) % MODES.length; }
+  toggle_units() { this.units = (this.units + 1) % UNITS.length; }
+  toggle_menu() { this.menu_open = !this.menu_open; setProp(ui.menu, 'hidden', !this.menu_open); }
+  event(text) { if (this.rec) this.rec.event(text); }
+  toggle_raw() { this.show_raw = !this.show_raw; }
+  toggle_mute() {
+    this.mute = !this.mute;
+    this.event('sound ' + (this.mute ? 'muted' : 'on'));
+    this.say(this.mute ? 'Sound off' : 'Sound on', DIM, 2.0);
+  }
+  cycle_rate() {
+    this.rate_i = (this.rate_i + 1) % RATE_EVERY.length;
+    const m = RATE_EVERY[this.rate_i];
+    this.next_rate = now() + m * 60;
+    this.say(m === 0 ? 'Ratings off' : `Ratings every ${m} min`, DIM, 3.0);
+  }
+  menu_action(act) {
+    ({ units: () => this.toggle_units(), bg: () => this.cycle_bg(), raw: () => this.toggle_raw(),
+       jaw: () => this.start_wizard('jaw'), shoulder: () => this.start_wizard('shoulder'),
+       trial: () => this.trial_key(), rate: () => this.rate_prompt(), rate_every: () => this.cycle_rate(),
+       note: () => this.add_note(), mute: () => this.toggle_mute(), save: () => this.save_session(),
+       files: () => showFiles(), quit: () => this.quit() })[act]();
+  }
+  menu_row(key) {                       // [label, highlighted]
+    const w = this.wiz, tr = this.trial;
+    if (key === 'units') return [this.units === 0 ? 'units: % share' : 'units: total power', true];
+    if (key === 'bg') return [`background: ${MODES[this.mode]}`, this.mode > 0];
+    if (key === 'raw') return [`raw numbers: ${this.show_raw ? 'on' : 'off'}`, this.show_raw];
+    if (key in PROTOCOLS) {
+      const busy = !!(w && w.name === key), mark = this.det[key].ready ? '  ✓' : '';
+      return [busy ? `cancel ${key} cal` : `${key} calibration${mark}`, busy || this.det[key].ready];
+    }
+    if (key === 'trial') return [tr ? 'cancel trial' : 'run a trial...', !!tr];
+    if (key === 'rate') return ['rate attention now', !!this.rating];
+    if (key === 'rate_every') { const m = RATE_EVERY[this.rate_i]; return [m === 0 ? 'ratings: off' : `ratings: every ${m} min`, m > 0]; }
+    if (key === 'note') return ['add a note...', false];
+    if (key === 'mute') return [`sound: ${this.mute ? 'off' : 'on'}`, !this.mute];
+    if (key === 'save') return ['save session data', false];
+    if (key === 'files') return ['saved files...', false];
+    return ['quit (end session)', false];
+  }
+  say(text, color = DIM, secs = 8.0) { this.msg = [text, color, now() + secs]; }
+  play(kind) { if (!this.mute) beep(kind); }
+
+  /* ---------------------------------------------------------------- contact */
+  update_contact(t, cc) {               // per-sample verdicts -> steady state: unknown / ok / lost
+    const c = this.contact;
+    if (cc === null) return;
+    const vals = Object.entries(cc);
+    const lost = vals.filter(([, v]) => v.ok === false).map(([ch]) => ch);
+    if (vals.every(([, v]) => v.ok === null)) return;   // packet loss: no verdict either way
+    if (lost.length) {
+      c.good_since = null;
+      if (c.bad_since === null) c.bad_since = t;
+      c.lost = lost;
+      if (c.state !== 'lost' && t - c.bad_since >= LOSS_S) {
+        c.state = 'lost'; c.lost_at = c.bad_since;
+        this.event(`contact lost: ${lost.join('/')}`);
+        if (c.armed) this.contact_alert(t, lost);
+      } else if (c.state === 'lost' && c.armed && t - c.last_alert > 8.0) this.contact_alert(t, lost);
+    } else {
+      c.bad_since = null;
+      c.lost = [];
+      if (c.good_since === null) c.good_since = t;
+      if (c.state !== 'ok' && t - c.good_since >= STEADY_S) {
+        const was_lost = c.state === 'lost' && c.armed;
+        c.state = 'ok'; c.armed = true;
+        this.event('contact steady');
+        if (was_lost) { this.play('contact_ok'); this.say('Contact restored', OKC, 3.0); }
+      }
+    }
+  }
+  contact_alert(t, lost) {
+    this.contact.last_alert = t;
+    this.flash_until = t + 0.35;
+    this.play('contact_lost');
+    this.say(`${lost.join('/')} lost contact: press the band against your forehead`, BADC, 6.0);
+  }
+
+  /* ---------------------------------------------------------------- ratings and notes */
+  rate_prompt() {
+    if (this.rating || this.wiz) return;
+    this.rating = { until: now() + RATE_TIMEOUT };
+    this.play('rate');
+  }
+  give_rating(n) {
+    const t = now();
+    this.rating = null;
+    this.pending_rating = n;
+    this.rec.mark(t, `rating:${n}`);
+    this.say(`Attention rated ${n}/5`, OKC, 2.5);
+    this.next_rate = t + RATE_EVERY[this.rate_i] * 60;
+  }
+  add_note() {
+    const text = window.prompt('Add a note to this session (time of day, task, dose time...):', '');
+    if (text && text.trim()) this.log_note(text.trim());
+  }
+  log_note(text) {
+    this.notes.push({ time: isoLocal(now(), 's'), text });
+    this.rec.mark(now(), `note:${text}`);
+    this.rec.update_meta({ notes: this.notes });
+    this.say('Note saved', OKC, 2.5);
+  }
+
+  /* ---------------------------------------------------------------- tension */
+  load_tension() {
+    try {
+      const data = JSON.parse(localStorage.getItem(TENSION_KEY) || '{}');
+      for (const [name, d] of Object.entries(data)) if (this.det[name]) this.det[name].load(d);
+    } catch (e) {}
+  }
+  save_tension() {
+    try {
+      const out = {};
+      for (const [n, d] of Object.entries(this.det)) if (d.ready) out[n] = d.to_dict();
+      localStorage.setItem(TENSION_KEY, JSON.stringify(out));
+    } catch (e) {}
+  }
+  start_wizard(name) {
+    let ears = [];
+    if (!this.args.demo) {
+      if (now() - this.engine.last_rx > 3) { this.say('Waiting for the headband to stream first', WARNC, 4.0); return; }
+      const missing = FOCUS_CH.filter(c => this.engine.last_idx[c] === null);
+      if (missing.length) { this.say(`The forehead sensors (${missing.join('/')}) aren't streaming yet.`, WARNC, 6.0); return; }
+      ears = ['TP9', 'TP10'].filter(c => this.engine.last_idx[c] === null);
+    }
+    if (this.contact.state === 'lost') { this.say(`Fix forehead contact first (${this.contact.lost.join('/')})`, WARNC, 5.0); return; }
+    if (this.trial) { this.say('Finish or cancel the trial first (press n)', WARNC, 4.0); return; }
+    if (this.wiz) {
+      const was = this.wiz.name;
+      this.wiz = null;
+      this.say('Calibration cancelled', DIM, 3.0);
+      if (was === name) return;
+    }
+    const P = PROTOCOLS[name];
+    const sched = [['ready', LEAD_S, -1]];
+    for (let c = 0; c < P.cycles; c++) sched.push(['rest', P.rest, c], ['tense', P.tense, c]);
+    this.wiz = { name, sched, t0: now(), idx: -1,
+                 rest: Array.from({ length: P.cycles }, () => []), tense: Array.from({ length: P.cycles }, () => []),
+                 ph: 'ready', left: LEAD_S, cy: 0 };
+    this.msg = null;
+    if (!this.args.demo && ears.length) this.say(`${ears.join('/')} not streaming: using the forehead sensors only, which is less reliable.`, WARNC, 6.0);
+    this.event(`${name} calibration started`);
+  }
+  wizard_step(f, t) {
+    const w = this.wiz;
+    const el = t - w.t0;
+    let cum = 0, i = -1, ph, dur, cy;
+    for (let k = 0; k < w.sched.length; k++) {
+      [ph, dur, cy] = w.sched[k];
+      if (el < cum + dur) { i = k; break; }
+      cum += dur;
+    }
+    if (i < 0) { this.finish_wizard(); return; }
+    if (i !== w.idx) { w.idx = i; if (ph === 'rest' || ph === 'tense') this.play(ph); }
+    w.ph = ph; w.left = cum + dur - el; w.cy = cy;
+    if ((ph === 'rest' || ph === 'tense') && el - cum >= SKIP_S && f !== null) w[ph][cy].push(f);
+  }
+  finish_wizard() {
+    const w = this.wiz;
+    this.wiz = null;
+    const P = PROTOCOLS[w.name], det = this.det[w.name];
+    let q;
+    try { q = det.fit(w.rest, w.tense); }
+    catch (e) { q = { tpr: 0.0, fpr: 1.0, ok: false }; det.p = null; det.quality = q; this.event(`${w.name} calibration error: ${errText(e)}`); }
+    this.event(`${w.name} calibration finished: ${pyRepr(q, true)}`);
+    const pct = v => `${Math.round(v * 100)}%`;
+    if (q.ok) {
+      this.save_tension();
+      this.say(`${P.label} ready. Caught ${pct(q.tpr)} of tension, ${pct(q.fpr)} false alarms.`, '#3dff9a');
+      this.play('done');
+    } else {
+      this.say(`${P.label}: couldn't tell it from rest (${pct(q.tpr)} caught, ${pct(q.fpr)} false alarms). Alerts off. Try a stronger movement, or the Muse may not reach this muscle.`, '#ffb84a', 12.0);
+      this.play('fail');
+    }
+  }
+  alert(name, t) {
+    this.last_alert[name] = t;
+    this.flash_until = t + 0.35;
+    this.event(`ALERT ${name}: score ${this.tp[name].toFixed(2)}`);
+    this.play(name);
+  }
+
+  /* ---------------------------------------------------------------- trials */
+  trial_key() {
+    if (this.trial) {
+      if (this.trial.status === 'running') this.cancel_trial();
+      return;
+    }
+    showTrialChooser();
+  }
+  start_trial(text, filename, source) {
+    if (this.trial || this.wiz) return;
+    let defn;
+    try { defn = load_trial(text, filename); }
+    catch (e) {
+      this.say(`Trial file problem: ${e.message}`, WARNC, 12.0);
+      this.event(`trial file rejected: ${e.message}`);
+      return;
+    }
+    const plan = plan_trial(defn), colors = {};
+    for (const b of plan) {
+      const ok = typeof b.color === 'string' && /^#[0-9a-fA-F]{6}$/.test(b.color);
+      if (!(b.label in colors)) colors[b.label] = ok ? b.color : PALETTE[Object.keys(colors).length % PALETTE.length];
+    }
+    const segs = [];
+    if (defn.lead_in_s > 0) segs.push({ block: -1, label: 'lead_in', cycle: 0, instruction: 'Get ready',
+                                        duration_s: defn.lead_in_s, color: '#ffd84a', sound: false });
+    for (const b of plan) segs.push(Object.assign({}, b, { color: colors[b.label] }));
+    const t = now();
+    this.msg = null;
+    this.rec.tap = new TrialCapture();
+    this.trial = { defn, path: source, file: filename, name: defn.name, segs, n_blocks: plan.length, tap: this.rec.tap,
+                   t0: t, cur: -1, timeline: [], status: 'running', finalize_at: null, left: 0.0,
+                   total: segs.reduce((s, b) => s + b.duration_s, 0), phase: 'waiting', eff: 0.0, last: t,
+                   paused_s: 0.0, pause_n: 0 };
+    this.event(`trial '${defn.name}' started from ${filename}: ${plan.length} blocks, ${this.trial.total.toFixed(0)} s of usable data`
+               + (defn.shuffle ? `, shuffle seed ${defn.seed_used}` : ''));
+  }
+  open_segment(t, i, part = 1) {
+    const tr = this.trial, seg = tr.segs[i];
+    tr.cur = i;
+    tr.timeline.push({ block: seg.block, label: seg.label, cycle: seg.cycle, instruction: seg.instruction,
+                       planned_s: seg.duration_s, t_start: t, t_end: null, eff0: tr.eff, part });
+  }
+  trial_step(t) {
+    const tr = this.trial;
+    if (!tr) return;
+    if (tr.status !== 'running') {
+      if (tr.finalize_at && t >= tr.finalize_at && !tr.finalizing) this.finish_trial();
+      return;
+    }
+    const dt = Math.max(0, Math.min(0.5, t - tr.last));
+    tr.last = t;
+    const state = this.contact.state, segs = tr.segs;
+    if (tr.phase === 'waiting') {                    // nothing counts until contact is steady
+      if (state !== 'ok') return;
+      tr.phase = 'counting';
+      this.open_segment(t, 0);
+      const seg = segs[0];
+      this.rec.mark(t, `trial:${tr.name}|block:${seg.block}|${seg.label}|start`);
+    } else if (tr.phase === 'paused') {
+      tr.paused_s += dt;
+      if (state === 'ok') this.resume_trial(t);
+      return;
+    } else {
+      if (state === 'lost') { this.pause_trial(t); return; }
+      tr.eff += dt;
+    }
+    const eff = tr.eff;
+    let cum = 0, i = segs.length;
+    for (let k = 0; k < segs.length; k++) {
+      if (eff < cum + segs[k].duration_s) { i = k; break; }
+      cum += segs[k].duration_s;
+    }
+    if (i !== tr.cur) {
+      tr.timeline[tr.timeline.length - 1].t_end = t;
+      if (i >= segs.length) {
+        tr.status = 'completed'; tr.finalize_at = t + 1.5;       // keep capturing a moment for late packets
+        this.rec.mark(t, `trial:${tr.name}|end`);
+        this.play('trial_done');
+        this.say('Trial complete, saving...', OKC, 6.0);
+        return;
+      }
+      this.open_segment(t, i);
+      const seg = segs[i];
+      this.rec.mark(t, `trial:${tr.name}|block:${seg.block}|${seg.label}|start`);
+      if (seg.sound) this.play('block');
+    }
+    tr.left = cum + segs[i].duration_s - eff;
+  }
+  pause_trial(t) {
+    const tr = this.trial, cur = tr.timeline[tr.timeline.length - 1];
+    const t_lost = Math.max(cur.t_start, (this.contact.lost_at || t) - BACKDATE_S);
+    cur.t_end = t_lost;
+    tr.eff = Math.max(cur.eff0, tr.eff - (t - t_lost));       // take back time that had bad data in it
+    const chans = this.contact.lost.join('/') || 'forehead';
+    tr.timeline.push({ block: -2, label: 'contact_pause', cycle: 0, instruction: `contact lost: ${chans}`, planned_s: 0,
+                       t_start: t_lost, t_end: null, eff0: tr.eff, part: 0, resume_block: cur.block });
+    tr.phase = 'paused';
+    tr.pause_n += 1;
+    this.rec.mark(t, `trial:${tr.name}|contact_lost|${chans}|during block:${cur.block} (data from ${t_lost.toFixed(2)} on is excluded)`);
+  }
+  resume_trial(t) {
+    const tr = this.trial;
+    tr.timeline[tr.timeline.length - 1].t_end = t;
+    const blk = tr.segs[tr.cur].block;
+    const part = 1 + tr.timeline.filter(s => s.block === blk).length;
+    this.open_segment(t, tr.cur, part);
+    tr.phase = 'counting';
+    const seg = tr.segs[tr.cur];
+    this.rec.mark(t, `trial:${tr.name}|block:${seg.block}|${seg.label}|resumed (part ${part})`);
+    this.play('block');
+  }
+  cancel_trial() {
+    const tr = this.trial, t = now();
+    if (!tr || tr.status !== 'running') return;
+    if (tr.timeline.length) tr.timeline[tr.timeline.length - 1].t_end = t;
+    tr.status = 'cancelled'; tr.finalize_at = t + 1.5;
+    this.rec.mark(t, `trial:${tr.name}|cancelled`);
+    this.play('trial_cancel');
+    this.say('Trial cancelled, saving what was recorded...', WARNC, 6.0);
+  }
+  async finish_trial() {
+    const tr = this.trial;
+    tr.finalizing = true;
+    this.trial = null;
+    this.rec.tap = null;
+    if (!tr.timeline.length) return;
+    if (tr.timeline[tr.timeline.length - 1].t_end === null) tr.timeline[tr.timeline.length - 1].t_end = now();
+    const safe = tr.name.replace(/[^A-Za-z0-9_.-]+/g, '_') || 'trial';
+    const folder = `${safe}_${stampCompact(tr.t0)}`;
+    const meta = { name: tr.name, description: tr.defn.description || '', status: tr.status, source_file: tr.path,
+                   definition: tr.defn, session_dir: this.rec.dir, device: this.rec.meta.device === undefined ? null : this.rec.meta.device,
+                   shuffle_seed: tr.defn.seed_used === undefined ? null : tr.defn.seed_used,
+                   plan: tr.segs.map(s => ({ block: s.block, label: s.label, duration_s: s.duration_s })),
+                   contact: { pauses: tr.pause_n, paused_s: Math.round(tr.paused_s * 10) / 10,
+                              counted_s: Math.round(tr.eff * 10) / 10, required_steady_s: STEADY_S },
+                   notes: this.notes.slice(),
+                   calibration: { tension: Object.fromEntries(PROTO_NAMES.map(n => [n, this.det[n].quality])) } };
+    try {
+      await sleep(0);
+      const { files, counts } = export_trial(tr.tap, tr.timeline, meta);
+      for (const f of files) this.rec.trialFiles.push({ path: `trials/${folder}/${f.path}`, data: f.data });
+      const blob = await makeZip(files.map(f => ({ path: `${folder}/${f.path}`, data: f.data })));
+      const zipName = `${folder}.zip`;
+      const stored = await storeZip(zipName, 'trial', blob);
+      this.event(`trial exported to ${this.rec.dir}/trials/${folder}: ${pyRepr(counts)}`);
+      this.say(`Trial saved: ${this.rec.dir}/trials/${folder}`, OKC, 20.0);
+      this.show_banner(`Trial saved: ${zipName}${stored ? '' : ' (not kept in the browser: download it now)'}`, blob, zipName);
+    } catch (e) {
+      this.event(`trial export failed: ${errText(e)}`);
+      this.say(`Trial export failed: ${errText(e)}`, WARNC, 20.0);
+    }
+  }
+  show_banner(text, blob, name) {
+    this.banner = { blob, name };
+    ui.bannerTxt.textContent = text;
+    setProp(ui.banner, 'hidden', false);
+  }
+  async session_zip() {
+    const files = this.rec.files().concat([{ path: 'band_log.csv', data: this.bandLog }], this.rec.trialFiles);
+    return makeZip(files.map(f => ({ path: `${this.rec.stamp}/${f.path}`, data: f.data })));
+  }
+  async save_session() {
+    this.say('Packing session data...', DIM, 4.0);
+    try {
+      const blob = await this.session_zip(), name = `muse_session_${this.rec.stamp}.zip`;
+      this.show_banner(`Session data so far: ${name} (${(blob.size / 1e6).toFixed(1)} MB)`, blob, name);
+      this.event('session data saved (snapshot)');
+    } catch (e) { this.say(`Couldn't pack the session: ${errText(e)}`, WARNC, 10.0); }
+  }
+
+  /* ---------------------------------------------------------------- data: Bluetooth */
+  stopWait(sec) {                       // true if stop was requested, else false after sec
+    if (this.stopFlag) return Promise.resolve(true);
+    return new Promise(res => {
+      const w = v => { clearTimeout(id); this.stopWaiters = this.stopWaiters.filter(x => x !== w); res(v); };
+      const id = setTimeout(() => w(false), sec * 1000);
+      this.stopWaiters.push(w);
+    });
+  }
+  requestStop() { this.stopFlag = true; for (const w of this.stopWaiters.slice()) w(true); }
+  note(msg) { this.ble_msg = msg; this.event(msg); }
+  guard(name, fn) { try { fn(); } catch (e) { this.event(`handler error in ${name}: ${errText(e)}`); } }
+
+  async ble_loop() {
+    while (!this.stopFlag) {
+      try { await this.stream(); }
+      catch (e) { this.ble_msg = errText(e); }
+      if (await this.stopWait(5)) break;
+      this.ble_msg = 'Reconnecting...';
+    }
+  }
+  async write(text) { await this.ctrl.writeValue(museCmd(text)); await sleep(60); }
+  async stream() {
+    const dev = this.device, rec = this.rec;
+    this.note(`Found ${dev.name} (${dev.id}), connecting...`);
+    rec.update_meta({ device: dev.name, address: dev.id });
+    this.engine.reset_stream();
+    this.last_packet = now();
+    this.subs = [];
+    this.attempt = (this.attempt || 0) + 1;
+    rec.event(`attempt ${this.attempt}: web bluetooth`);
+    const server = await dev.gatt.connect();
+    try {
+      rec.event(`browser: ${navigator.userAgent}`);
+      await sleep(1000);                          // let the headband finish setting up its services
+      const svc = await server.getPrimaryService(MUSE_SERVICE);
+      let have = [];
+      try { have = (await svc.getCharacteristics()).map(c => c.uuid.toLowerCase()); }
+      catch (e) { rec.event(`couldn't list characteristics: ${errText(e)}`); }
+      if (have.length) {
+        rec.event('characteristics: ' + have.slice().sort().join(', '));
+        rec.update_meta({ characteristics: have.slice().sort() });
+      }
+      const listen = async (uuid, handler, tries) => {
+        let err = null;
+        for (let k = 0; k < tries; k++) {       // a first attempt can fail while services settle
+          try {
+            const c = await svc.getCharacteristic(uuid);
+            c.addEventListener('characteristicvaluechanged', handler);
+            this.subs.push([c, handler]);
+            await c.startNotifications();
+            return [c, null];
+          } catch (e) { err = e; await sleep(600); }
+        }
+        return [null, err];
+      };
+      const [ctrl, cerr] = await listen(CTRL_UUID, e => this.guard('control', () => this.on_control(e.target.value)), 1);
+      if (cerr) throw cerr;
+      this.ctrl = ctrl;
+      await this.write('h');                      // halt
+      await this.write('p21');                    // EEG preset
+      const missing = [];
+      for (const [ch, uuid] of Object.entries(EEG_UUIDS)) {
+        const [, err] = await listen(uuid, e => { this.last_packet = now(); this.guard('eeg', () => this.on_eeg(ch, e.target.value)); }, 3);
+        if (err) { missing.push(ch); rec.event(`${ch} sensor unavailable: ${errText(err)}`); }
+      }
+      if (FOCUS_CH.some(c => missing.includes(c))) {
+        throw new Error(`Couldn't subscribe to the forehead sensors (${missing.join('/')}); the headband listed ${have.length} characteristics. Retrying. If this repeats, turn Bluetooth off and on, then power the Muse off and on.`);
+      }
+      if (missing.length) this.note(`${missing.join('/')} not available on this headband. Focus works; jaw and shoulder detection are off.`);
+      for (const [sensor, uuid] of Object.entries(EXTRA_UUIDS)) {         // optional streams
+        const [, err] = await listen(uuid, e => this.guard(sensor === 'TEL' ? 'telemetry' : 'motion',
+          () => (sensor === 'TEL' ? this.on_telemetry(e.target.value) : this.on_motion(sensor, e.target.value))), 1);
+        if (err) rec.event(`${sensor} stream not available: ${errText(err)}`);
+      }
+      for (const c of ['v1', 's']) { try { await this.write(c); } catch (e) {} }   // version and status
+      await this.write('d');                      // start streaming
+      this.note('Streaming.');
+      while (dev.gatt.connected && !this.stopFlag) {
+        if (await this.stopWait(1)) break;
+        if (now() - this.last_packet > 5) { this.note('No data for 5 s.'); break; }
+      }
+    } finally {
+      rec.event('stream ended');
+      try { if (dev.gatt.connected && this.ctrl) await this.ctrl.writeValue(museCmd('h')); } catch (e) {}
+      for (const [c, h] of this.subs) { try { c.removeEventListener('characteristicvaluechanged', h); } catch (e) {} }
+      this.subs = [];
+      try { if (dev.gatt.connected) dev.gatt.disconnect(); } catch (e) {}
+    }
+  }
+  on_eeg(ch, dv) {
+    const t = now(), data = dvBytes(dv);
+    this.rec.packet(t, 'EEG_' + ch, data);
+    if (data.length < 20) return;
+    const [idx, samples] = decode_eeg_packet(data);
+    this.engine.add(ch, idx, samples);
+    this.rec.eeg(ch, idx, samples, t);
+  }
+  on_motion(sensor, dv) {
+    const t = now(), data = dvBytes(dv);
+    this.rec.packet(t, sensor, data);
+    if (data.length < 20) return;
+    const v = new DataView(data.buffer), idx = v.getUint16(0, false);
+    const s = sensor === 'ACC' ? ACC_SCALE : GYRO_SCALE, unit = sensor === 'ACC' ? 'g' : 'deg/s';
+    const rows = [0, 3, 6].map(i => [0, 1, 2].map(j => v.getInt16(2 + 2 * (i + j), false) * s));
+    this.engine.motion_last[sensor === 'ACC' ? 'acc' : 'gyro'] = rows[2];
+    this.rec.motion(t, sensor, idx, rows, unit);
+  }
+  on_telemetry(dv) {
+    const t = now(), data = dvBytes(dv);
+    this.rec.packet(t, 'TEL', data);
+    if (data.length < 10) return;
+    const v = new DataView(data.buffer), u = [0, 1, 2, 3, 4].map(i => v.getUint16(2 * i, false));
+    const [idx, batt, fuel, adc, temp] = u;
+    this.engine.batt = batt / 512.0;
+    this.rec.telemetry(t, idx, [batt, fuel, adc, temp], batt / 512.0, fuel * 2.2);
+  }
+  on_control(dv) {
+    const t = now(), data = dvBytes(dv);
+    this.rec.packet(t, 'CTRL', data);
+    let text = '';
+    for (let i = 1; i < data.length; i++) text += data[i] < 128 ? String.fromCharCode(data[i]) : '�';
+    text = text.trim();
+    if (text) this.rec.event('headband says: ' + text);
+  }
+
+  /* ---------------------------------------------------------------- data: demo */
+  start_demo() {                        // relaxed (alpha) <-> engaged (beta) swing, muscle burst every 25 s,
+    this.ble_msg = 'Demo data';         // 7 s loss of AF7 contact every 100 s
+    this.demoIdx = 0;
+    this.demoT0 = now();
+    this.demoIv = setInterval(() => {
+      const target = Math.floor((now() - this.demoT0) * FS / 12);
+      if (target - this.demoIdx > FS / 12 * 2) this.demoT0 = now() - this.demoIdx * 12 / FS;   // no catch-up after a pause
+      let n = 0;
+      while (this.demoIdx < Math.floor((now() - this.demoT0) * FS / 12) && n++ < 60) this.demo_packet();
+    }, 20);
+  }
+  demo_packet() {
+    const idx = this.demoIdx, sec = idx * 12 / FS;
+    const mood = 0.5 + 0.5 * Math.sin(2 * Math.PI * sec / 60);
+    const burst = (sec % 25) > 20 && (sec % 25) < 22 ? 40 : 0;
+    const t = now();
+    for (const ch of CH_ORDER) {
+      const s = new Float64Array(12);
+      for (let i = 0; i < 12; i++) {
+        const ti = (i + idx * 12) / FS;
+        s[i] = 6 * Math.sin(2 * Math.PI * 2 * ti) + 5 * Math.sin(2 * Math.PI * 6 * ti)
+             + 28 * (1 - mood) * Math.sin(2 * Math.PI * 10 * ti + 1)
+             + 16 * mood * Math.sin(2 * Math.PI * 20 * ti) + 3 * Math.sin(2 * Math.PI * 35 * ti)
+             + 5 * gauss() + (burst > 0 ? burst * gauss() : 0);
+        if (ch === 'AF7' && (sec % 100) > 70 && (sec % 100) < 77) s[i] += 150 * Math.sin(2 * Math.PI * MAINS_HZ * ti) + 30 * gauss();
+      }
+      this.engine.add(ch, idx & 0xffff, s);
+      this.rec.eeg(ch, idx & 0xffff, s, t);
+    }
+    this.demoIdx++;
+  }
+
+  static dominant(hist, sm, cur) {      // band most elevated vs the last HIST_S seconds (z-score), with hysteresis
+    if (hist.length < 6 * HZ) return null;
+    const z = {};
+    for (const [k] of BANDS) {
+      const vals = hist.map(h => h[1][k]);
+      z[k] = (sm[k] - amean(vals)) / Math.max(pstd(vals), 1e-6);
+    }
+    let best = BANDS[0][0];
+    for (const [k] of BANDS) if (z[k] > z[best]) best = k;
+    if (cur === null || z[best] > z[cur] + 0.5) cur = best;
+    return cur;
+  }
+
+  tick() {                              // analysis step, HZ times a second
+    if (this.closed) return;
+    try { this._tick(); } catch (e) { this.event(`tick error: ${errText(e)}`); }
+    this.tickT = setTimeout(() => this.tick(), 1000 / HZ);
+  }
+  _tick() {
+    const t = now(), eng = this.engine;
+    const f = eng.tension_features();               // also runs the muscle-burst guard
+    const cc = eng.contact_check();
+    this.update_contact(t, cc);
+    const lost = this.contact.state === 'lost';
+    if (this.wiz) this.wizard_step(lost ? null : f, t);
+    else if (f !== null && !lost) {
+      for (const [name, det] of Object.entries(this.det)) {
+        if (!det.ready) continue;
+        const [p, active, started] = det.update(f);
+        this.tp[name] = p;
+        if (active) {
+          if (name === 'jaw') eng.mark_muscle();      // clenching pollutes beta/gamma
+          if (started || t - this.last_alert[name] > this.args.cooldown) {
+            if (this.trial && this.trial.status === 'running') {
+              if (started) this.event(`${name} detected (alert suppressed during trial), score ${p.toFixed(2)}`);
+            } else this.alert(name, t);
+          }
+        }
+      }
+    }
+    // attention rating prompts
+    if (this.rating && t > this.rating.until) {
+      this.rating = null;
+      this.event('rating prompt timed out');
+      this.next_rate = t + RATE_EVERY[this.rate_i] * 60;
+    } else if (RATE_EVERY[this.rate_i] && t >= this.next_rate && !this.rating && !this.wiz && !this.trial && this.contact.state === 'ok') {
+      this.rate_prompt();
+    }
+
+    const res = eng.update();
+    this.last = res;
+    const bt = eng.band_table();
+    const extra = {};
+    for (const [name, det] of Object.entries(this.det)) {
+      extra[`${name}_p`] = det.ready ? this.tp[name].toFixed(3) : '';
+      extra[`${name}_active`] = det.ready ? (det.active ? 1 : 0) : '';
+    }
+    this.raw_text = format_raw(eng, bt, Object.fromEntries(Object.entries(extra).filter(([, v]) => v !== '')));
+    const tr = this.trial;
+    if (tr && tr.status === 'running') {
+      Object.assign(extra, { trial: tr.name, trial_state: tr.phase, trial_counted_s: tr.eff.toFixed(2) });
+      if (tr.timeline.length) {
+        const cur = tr.timeline[tr.timeline.length - 1];
+        Object.assign(extra, { block: cur.block, block_label: cur.label });
+      }
+    }
+    if (this.pending_rating !== null) { extra.rating = this.pending_rating; this.pending_rating = null; }
+    this.rec.analysis(analysis_row(eng, res, f, bt, extra));
+    if (res && !res.artifact) {
+      const a = 1 - Math.pow(0.6, 1 / HZ);
+      for (const [k, v] of Object.entries(res.rel)) this.sm[k] = k in this.sm ? a * v + (1 - a) * this.sm[k] : v;
+      const logs = {};
+      for (const [k, v] of Object.entries(res.uv2)) logs[k] = Math.log10(Math.max(v, 1e-6));
+      logs.total = Math.log10(Math.max(res.uv2_total, 1e-6));
+      for (const [k, v] of Object.entries(logs)) this.sm_t[k] = k in this.sm_t ? a * v + (1 - a) * this.sm_t[k] : v;
+      this.dom_p = App.dominant(this.hist, this.sm, this.dom_p);
+      this.dom_t = App.dominant(this.thist, this.sm_t, this.dom_t);
+      this.hist.push([t, Object.assign({}, this.sm), this.dom_p]);
+      this.thist.push([t, Object.assign({}, this.sm_t), this.dom_t]);
+      if (this.hist.length > this.histMax) this.hist.shift();
+      if (this.thist.length > this.histMax) this.thist.shift();
+      if (t - this.last_log >= 1.0) {               // log once per second
+        this.last_log = t;
+        this.bandLog.push(csvLine([isoLocal(t, 's'), res.uv2_total.toFixed(3)]
+          .concat(BANDS.map(([k]) => res.rel[k].toFixed(4)), BANDS.map(([k]) => res.uv2[k].toFixed(3)),
+                  PROTO_NAMES.map(n => this.tp[n].toFixed(2)))));
+      }
+    }
+  }
+
+  /* ---------------------------------------------------------------- layout */
+  build() {
+    ui.layers.innerHTML = '';
+    ui.layerBtns = {};
+    for (const [k, sym, col] of LAYERS) {
+      const b = document.createElement('button');
+      b.className = 'lb'; b.textContent = sym; b.style.color = col;
+      b.addEventListener('click', () => this.toggle(k));
+      ui.layers.appendChild(b); ui.layerBtns[k] = b;
+    }
+    ui.rows.innerHTML = '';
+    ui.rowBtns = {};
+    for (const key of MENU_ROWS) {
+      const b = document.createElement('button');
+      b.className = 'mrow';
+      b.addEventListener('click', () => this.menu_action(key));
+      ui.rows.appendChild(b); ui.rowBtns[key] = b;
+    }
+    ui.legend.innerHTML = '';
+    ui.legBtns = {};
+    for (const [k, sym, col] of LAYERS) {
+      const b = document.createElement('button');
+      b.className = 'leg'; b.textContent = sym; b.style.color = col;
+      b.addEventListener('click', () => this.toggle(k));
+      ui.legend.appendChild(b); ui.legBtns[k] = b;
+    }
+  }
+
+  /* ---------------------------------------------------------------- frames */
+  status_text() {
+    const res = this.last, c = this.contact;
+    if (now() - this.engine.last_rx > 3 && !this.args.demo) return [this.ble_msg, DIM];
+    if (c.state === 'lost') return [`${c.lost.join('/')} contact lost: press the band against your forehead`, BADC];
+    if (c.state === 'unknown') {
+      const gs = c.good_since;
+      if (gs === null) return ['Waiting for good forehead contact...', WARNC];
+      return [`Settling contact... ${Math.max(0, STEADY_S - (now() - gs)).toFixed(0)} s`, WARNC];
+    }
+    if (res === null) return ['Filling buffer...', DIM];
+    if (res.artifact) return [res.why || 'noisy window', WARNC];
+    const p = Object.entries(this.engine.p2p).map(([k, v]) => `${k} ${v.toFixed(0)}`).join('  ');
+    const only = res.bad.length ? '  only ' + FOCUS_CH.filter(k => !res.bad.includes(k)).join('/') : '';
+    return [`${p} uV p-p${only}`, DIM];
+  }
+  frame(ts) {
+    if (this.closed) return;
+    this.rafId = requestAnimationFrame(t2 => this.frame(t2));
+    if (ts - this.last_frame < 1000 / this.args.fps - 2) return;
+    this.dt = Math.min(0.2, (ts - this.last_frame) / 1000);
+    this.last_frame = ts;
+    const k = 1 - Math.exp(-this.dt * 6);            // easing factor, frame-rate independent
+    for (const [tgt, disp] of [[this.sm, this.disp_rel], [this.sm_t, this.disp_tot]]) {
+      for (const [key, v] of Object.entries(tgt)) { const cur = key in disp ? disp[key] : v; disp[key] = cur + (v - cur) * k; }
+    }
+    try { this.trial_step(now()); } catch (e) { this.event(`trial error: ${errText(e)}`); }
+    try { this.render(); } catch (e) { console.error(e); }
+  }
+  series(key, t, gx0, gx1, pps) {       // [[x, value]] for one layer, ending with the eased live point
+    const src = this.units === 0 ? this.hist : this.thist;
+    const head = this.units === 0 ? this.disp_rel[key] : this.disp_tot[key];
+    const out = [];
+    for (const [ht, d] of src) {
+      if (!(key in d)) continue;
+      const x = gx1 - (t - ht) * pps;
+      if (x >= gx0) out.push([x, d[key]]);
+    }
+    if (out.length && head !== undefined) out.push([gx1, head]);
+    return out;
+  }
+  render() {
+    const t = now(), c = this.contact;
+    const want = t < this.flash_until ? FLASH_BG : BG;    // flash on an alert
+    if (want !== this.cur_bg) { this.cur_bg = want; document.body.style.background = want; ui.app.style.background = want; }
+
+    for (const ch of FOCUS_CH) {
+      const col = c.state === 'lost' && c.lost.includes(ch) ? BADC : (c.state === 'ok' ? OKC : WARNC);
+      setProp(ui.cdot[ch], 'color', col);
+    }
+    const [text, tcol] = this.status_text();
+    setProp(ui.status, 'text', text); setProp(ui.status, 'color', tcol);
+
+    for (const name of PROTO_NAMES) {       // grey = not calibrated, green = watching, red = tension detected
+      let col;
+      if (this.wiz && this.wiz.name === name) col = WARNC;
+      else if (!this.det[name].ready) col = OFFC;
+      else if (this.det[name].active) col = BADC;
+      else col = '#3f7a58';
+      setProp(ui.chips[name], 'color', col);
+    }
+
+    if (this.menu_open) {
+      for (const [k] of LAYERS) {
+        const on = this.on[k] && !(k === 'total' && this.units === 0);
+        setProp(ui.layerBtns[k], 'color', on ? COL[k] : OFFC);
+        setProp(ui.layerBtns[k], 'borderColor', on ? '#555555' : '#222222');
+      }
+      for (const key of MENU_ROWS) {
+        const [label, hi] = this.menu_row(key);
+        setProp(ui.rowBtns[key], 'text', label);
+        setProp(ui.rowBtns[key], 'cls', hi ? 'mrow hi' : 'mrow');
+      }
+    }
+
+    for (const [key, sym, color] of LAYERS) {   // legend doubles as the layer switches
+      const usable = !(key === 'total' && this.units === 0);
+      let txt = sym, fill = OFFC;
+      if (this.on[key] && usable) {
+        if (this.units === 0) { const v = this.disp_rel[key]; txt = v !== undefined ? `${sym} ${(v * 100).toFixed(0)}%` : sym; }
+        else { const v = this.disp_tot[key]; txt = v !== undefined ? `${sym} ${fmtG(Math.pow(10, v), 3)}` : sym; }
+        fill = color;
+      }
+      setProp(ui.legBtns[key], 'text', txt); setProp(ui.legBtns[key], 'color', fill);
+    }
+
+    // ---- graph
+    const cv = ui.cv, dpr = window.devicePixelRatio || 1;
+    const W = cv.clientWidth, H = cv.clientHeight;
+    if (W < 50 || H < 50) return;
+    if (cv.width !== Math.round(W * dpr) || cv.height !== Math.round(H * dpr)) { cv.width = Math.round(W * dpr); cv.height = Math.round(H * dpr); }
+    const ctx = cv.getContext('2d');
+    ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+    ctx.fillStyle = this.cur_bg; ctx.fillRect(0, 0, W, H);
+    const gx0 = 10, gx1 = W - 10, gy0 = 18, gy1 = H - 6;
+    const pps = (gx1 - gx0) / HIST_S;
+    const mode = MODES[this.mode];
+    const vis = LAYERS.map(([k]) => k).filter(k => this.on[k] && !(k === 'total' && this.units === 0));
+    const ser = {};
+    for (const k of vis) ser[k] = this.series(k, t, gx0, gx1, pps);
+    for (const k of vis) {                          // per-layer ranges glide to their targets
+      const vals = ser[k].map(p => p[1]);
+      let tlo, thi;
+      if (this.units === 0) { tlo = 0.0; thi = Math.max(0.05, ...vals) * 1.1; }
+      else if (vals.length) {
+        tlo = Math.min(...vals) - 0.15; thi = Math.max(...vals) + 0.15;
+        if (thi - tlo < 0.7) { const mid = (thi + tlo) / 2; tlo = mid - 0.35; thi = mid + 0.35; }
+      } else { tlo = 0.0; thi = 1.0; }
+      const rk = this.units + ':' + k;
+      const cur = this.rng[rk] || (this.rng[rk] = [tlo, thi]);
+      const g = Math.min(1.0, this.dt * 2);
+      cur[0] += (tlo - cur[0]) * g; cur[1] += (thi - cur[1]) * g;
+    }
+    const shared = vis.length ? [Math.min(...vis.map(k => this.rng[this.units + ':' + k][0])), Math.max(...vis.map(k => this.rng[this.units + ':' + k][1]))] : [0.0, 0.3];
+    const box = {};
+    if (mode === 'lanes' && vis.length) {
+      const lane_h = (gy1 - gy0) / vis.length;
+      vis.forEach((k, i) => { const [lo, hi] = this.rng[this.units + ':' + k]; box[k] = [gy0 + i * lane_h + 1, gy0 + (i + 1) * lane_h - 2, lo, hi]; });
+    } else for (const k of vis) box[k] = [gy0, gy1, shared[0], shared[1]];
+
+    // background: state
+    if (mode === 'state') {
+      const hist = this.units === 0 ? this.hist : this.thist;
+      let runs = [], prev = null;
+      for (const [ht, , dom] of hist) if (dom !== prev) { runs.push([ht, dom]); prev = dom; }
+      runs = runs.slice(-POOL);
+      runs.forEach(([t0, dom], i) => {
+        if (dom === null) return;
+        const t1 = i + 1 < runs.length ? runs[i + 1][0] : t;
+        const x0 = Math.max(gx0, gx1 - (t - t0) * pps), x1 = Math.min(gx1, gx1 - (t - t1) * pps);
+        if (x1 > x0) { ctx.fillStyle = mix(COL[dom], BG, 0.86); ctx.fillRect(x0, gy0, x1 - x0, gy1 - gy0); }
+      });
+    }
+    // background: lanes
+    if (mode === 'lanes') {
+      for (const k of vis) { const [top, bot] = box[k]; ctx.fillStyle = mix(COL[k], BG, 0.90); ctx.fillRect(gx0, top, gx1 - gx0, bot - top); }
+    } else {
+      ctx.strokeStyle = GRID; ctx.lineWidth = 1;
+      for (const fr of [0.25, 0.5, 0.75]) { const y = Math.round(gy1 - fr * (gy1 - gy0)) + 0.5; ctx.beginPath(); ctx.moveTo(gx0, y); ctx.lineTo(gx1, y); ctx.stroke(); }
+    }
+    if (mode === 'lanes') {
+      ctx.font = '10px -apple-system,system-ui,sans-serif'; ctx.textBaseline = 'top'; ctx.textAlign = 'left';
+      for (const k of vis) {
+        const [top, bot] = box[k], [rg, what] = MEANING[k];
+        ctx.fillStyle = mix(COL[k], BG, 0.35);
+        ctx.fillText(bot - top >= 22 ? `${SYM[k]} ${rg}  ${what}` : `${SYM[k]} ${rg}`, gx0 + 3, top + 1);
+      }
+    }
+    // lines
+    ctx.lineWidth = 1.6; ctx.lineJoin = 'round';
+    for (const [key] of LAYERS) {
+      if (!vis.includes(key) || ser[key].length < 2) continue;
+      const [top, bot, lo, hi] = box[key], span = Math.max(hi - lo, 1e-6);
+      ctx.strokeStyle = COL[key];
+      ctx.beginPath();
+      ser[key].forEach(([x, v], i) => {
+        const y = bot - Math.min(Math.max((v - lo) / span, 0), 1) * (bot - top);
+        if (i === 0) ctx.moveTo(x, y); else ctx.lineTo(x, y);
+      });
+      ctx.stroke();
+    }
+    // notes above the graph
+    const dom = this.units === 0 ? this.dom_p : this.dom_t;
+    const what = this.units === 0 ? '% share' : 'total power, log';
+    let note, ncol;
+    if (mode === 'state') {
+      if (dom) { note = `${SYM[dom]} above your average: ${MEANING[dom][1]}`; ncol = mix(COL[dom], BG, 0.25); }
+      else { note = 'state: collecting baseline...'; ncol = DIM; }
+    } else if (mode === 'lanes') { note = `lanes (${what}): each layer on its own scale`; ncol = DIM; }
+    else { note = what; ncol = DIM; }
+    if (!vis.length) { note = 'all layers off (press 1-6)'; ncol = DIM; }
+    ctx.font = '11px -apple-system,system-ui,sans-serif'; ctx.textBaseline = 'alphabetic';
+    ctx.textAlign = 'left'; ctx.fillStyle = ncol; ctx.fillText(note, gx0 + 2, gy0 - 5);
+    let ylab = '';
+    if (mode !== 'lanes' && vis.length) ylab = this.units === 0 ? `${(shared[1] * 100).toFixed(0)}%` : `${fmtG(Math.pow(10, shared[0]), 2)}-${fmtG(Math.pow(10, shared[1]), 2)} uV²`;
+    ctx.textAlign = 'right'; ctx.fillStyle = '#4a4a4a'; ctx.fillText(ylab, gx1, gy0 - 5);
+
+    // calibration prompt / trial cue / result message
+    let big = '', sub = '', bigcol = '#ffffff', subcol = DIM;
+    const tr = this.trial;
+    if (this.wiz) {
+      const w = this.wiz, P = PROTOCOLS[w.name], ph = w.ph;
+      big = { ready: 'GET READY', rest: 'RELAX', tense: P.prompt }[ph];
+      bigcol = { ready: '#ffd84a', rest: '#00d4ff', tense: '#ff5a5f' }[ph];
+      const step = ph === 'ready' ? 'starting' : `${w.cy + 1}/${P.cycles}`;
+      const tail = { ready: 'sit normally, face relaxed', rest: 'sit normally, face relaxed', tense: P.hint }[ph];
+      sub = `${P.label} calibration  ${step}  ${Math.max(0, w.left).toFixed(0)} s\n${tail}`;
+    } else if (tr && tr.status === 'running') {
+      if (tr.phase === 'waiting') {
+        const gs = c.good_since;
+        const prog = gs === null || c.state === 'lost' ? '' : ` (${Math.min(STEADY_S, t - gs).toFixed(0)}/${STEADY_S.toFixed(0)} s)`;
+        big = 'SETTLING'; bigcol = WARNC;
+        sub = `Waiting for steady contact on both forehead sensors${prog}.\nPress the band on firmly and sit still. The trial hasn't started.`;
+        subcol = '#cfcfcf';
+      } else if (tr.phase === 'paused') {
+        const seg = tr.segs[tr.cur], gs = c.good_since;
+        let prog = '';
+        if (gs !== null && c.state === 'lost') prog = `  steady for ${Math.min(STEADY_S, t - gs).toFixed(0)}/${STEADY_S.toFixed(0)} s`;
+        big = 'CONTACT LOST'; bigcol = BADC;
+        sub = `${c.lost.join('/') || 'forehead'}: press the band on firmly.\nClock stopped at ${tr.eff.toFixed(0)}/${tr.total.toFixed(0)} s (${seg.label}).${prog}`;
+        subcol = '#cfcfcf';
+      } else if (tr.cur >= 0) {
+        const seg = tr.segs[tr.cur];
+        bigcol = seg.color;
+        let head;
+        if (seg.block < 0) { big = 'GET READY'; head = `starting in ${Math.max(0, tr.left).toFixed(0)} s`; }
+        else {
+          big = seg.label.replace(/_/g, ' ').toUpperCase().slice(0, 20);
+          head = `${Math.max(0, tr.left).toFixed(0)} s left   block ${seg.block + 1}/${tr.n_blocks}`;
+        }
+        const lost_note = tr.paused_s >= 1 ? `   paused ${tr.paused_s.toFixed(0)} s` : '';
+        sub = `${seg.instruction}\n${head}   counted ${Math.min(tr.eff, tr.total).toFixed(0)}/${tr.total.toFixed(0)} s${lost_note}`;
+        subcol = '#cfcfcf';
+      }
+    } else if (this.msg && t < this.msg[2]) { sub = this.msg[0]; subcol = this.msg[1]; }
+    setProp(ui.cueBig, 'text', big); setProp(ui.cueBig, 'color', bigcol); setProp(ui.cueBig, 'hidden', !big);
+    setProp(ui.cueBig, 'fontSize', Math.round(Math.max(18, Math.min(46, (gy1 - gy0) * 0.2))) + 'px');
+    setProp(ui.cueSub, 'text', sub); setProp(ui.cueSub, 'color', subcol); setProp(ui.cueSub, 'hidden', !sub);
+    setProp(ui.raw, 'hidden', !this.show_raw);
+    if (this.show_raw) setProp(ui.raw, 'text', this.raw_text);
+    setProp(ui.rate, 'hidden', !this.rating);
+  }
+
+  quit() {
+    if (!window.confirm('Quit: end this session and save its data?')) return;
+    this.close();
+  }
+  async close() {
+    if (this.closed) return;
+    if (this.trial) {
+      if (this.trial.status === 'running') this.cancel_trial();
+      if (this.trial && !this.trial.finalizing) await this.finish_trial();
+    }
+    this.closed = true;
+    this.requestStop();
+    clearTimeout(this.tickT);
+    cancelAnimationFrame(this.rafId);
+    if (this.demoIv) clearInterval(this.demoIv);
+    if (this.device && this.device.gatt.connected) {
+      try { if (this.ctrl) await this.ctrl.writeValue(museCmd('h')); } catch (e) {}   // lets the Muse get its halt command
+      try { this.device.gatt.disconnect(); } catch (e) {}
+    }
+    this.rec.close({ calibration: { tension: Object.fromEntries(PROTO_NAMES.map(n => [n, this.det[n].quality])) }, notes: this.notes });
+    try { if (this.wakeLock) this.wakeLock.release(); } catch (e) {}
+    const blob = await this.session_zip(), name = `muse_session_${this.rec.stamp}.zip`;
+    const stored = await storeZip(name, 'session', blob);
+    sessionEnded(blob, name, stored);
+  }
+}
+
+/* ================================================================ page wiring */
+const ui = {
+  app: $('app'), menu: $('menu'), layers: $('layers'), rows: $('rows'), legend: $('legend'), status: $('status'),
+  cv: $('cv'), cueBig: $('cue-big'), cueSub: $('cue-sub'), raw: $('raw'), rate: $('rate'),
+  banner: $('banner'), bannerTxt: $('banner-txt'),
+  cdot: { AF7: $('cd-AF7'), AF8: $('cd-AF8') }, chips: { jaw: $('chip-jaw'), shoulder: $('chip-shoulder') },
+};
+let app = null;
+
+function startOpts() {
+  const ptp = parseFloat($('opt-ptp').value);
+  return { mains: parseFloat($('opt-mains').value) || 60, ptp: isFinite(ptp) && ptp > 0 ? ptp : ARTIFACT_PTP_UV, note: $('opt-note').value.trim() };
+}
+function startApp(opts) {
+  initAudio();
+  app = new App(opts);
+  $('start').classList.add('hidden');
+  $('start-done').classList.add('hidden');
+  ui.banner.classList.add('hidden');
+  app.start();
+}
+async function connectClick() {
+  const msg = $('start-msg');
+  if (!navigator.bluetooth) { msg.innerHTML = 'Web Bluetooth isn\'t available here. On iOS open this page in the <b>Bluefy</b> browser; on a computer use Chrome or Edge.'; return; }
+  msg.textContent = '';
+  initAudio();
+  let device;
+  try {
+    device = await navigator.bluetooth.requestDevice({ filters: [{ namePrefix: 'Muse' }], optionalServices: [MUSE_SERVICE] });
+  } catch (e) {
+    msg.textContent = e && e.name === 'NotFoundError' ? 'Scan cancelled. Hold the power button until the LED blinks, then try again.' : 'Bluetooth error: ' + errText(e);
+    return;
+  }
+  startApp(Object.assign(startOpts(), { device, demo: false }));
+}
+function sessionEnded(blob, name, stored) {
+  app = null;
+  const box = $('start-done');
+  box.innerHTML = '';
+  const p = document.createElement('p');
+  p.style.color = '#3dff9a';
+  p.textContent = `Session ended: ${name} (${(blob.size / 1e6).toFixed(1)} MB)` + (stored ? '. Also kept under Saved files.' : '. Download it now: it could not be kept in the browser.');
+  const b = document.createElement('button');
+  b.className = 'btn2'; b.textContent = 'Download session data';
+  b.addEventListener('click', () => saveBlob(blob, name));
+  box.append(p, b);
+  box.classList.remove('hidden');
+  $('start-msg').textContent = '';
+  $('start').classList.remove('hidden');
+}
+
+/* ---- modal sheets */
+function openSheet(build) {
+  const card = $('sheet-card');
+  card.innerHTML = '';
+  build(card);
+  $('sheet').classList.remove('hidden');
+}
+function closeSheet() { $('sheet').classList.add('hidden'); }
+function el(tag, props, ...kids) {
+  const e = document.createElement(tag);
+  Object.assign(e, props || {});
+  for (const k of kids) e.append(k);
+  return e;
+}
+function showTrialChooser() {
+  let d;
+  try { d = load_trial(BUILTIN_TRIAL, BUILTIN_TRIAL_FILE); } catch (e) { d = null; }
+  const total = d ? d.lead_in_s + d.repeat * d.blocks.reduce((s, b) => s + b.duration_s, 0) : 0;
+  openSheet(card => {
+    card.append(el('h2', { textContent: 'Run a trial' }));
+    const b1 = el('button', { className: 'btn2' }, BUILTIN_TRIAL_FILE,
+      el('small', { textContent: d ? `${d.blocks.length} blocks, ${Math.floor(total / 60)} min ${Math.round(total % 60)} s of counted time including the ${d.lead_in_s} s lead-in. ${d.description}` : '' }));
+    b1.addEventListener('click', () => { closeSheet(); if (app) app.start_trial(BUILTIN_TRIAL, BUILTIN_TRIAL_FILE, 'built-in: ' + BUILTIN_TRIAL_FILE); });
+    const b2 = el('button', { className: 'btn2' }, 'Load a trial file (.json)...', el('small', { textContent: 'Any trial file in the muse_focus.py format.' }));
+    b2.addEventListener('click', () => { closeSheet(); $('file-in').value = ''; $('file-in').click(); });
+    const det = el('details', {}, el('summary', { textContent: 'Trial file format' }), el('pre', { textContent: TRIAL_FORMAT + '\n\n' + TRIAL_NOTE }));
+    const bc = el('button', { className: 'btn2', textContent: 'Cancel' });
+    bc.addEventListener('click', closeSheet);
+    card.append(b1, b2, det, bc);
+  });
+}
+async function showFiles() {
+  let items = [];
+  let err = '';
+  try { items = (await Store.list()) || []; } catch (e) { err = 'Browser storage is unavailable here: ' + errText(e); }
+  items.sort((a, b) => b.created - a.created);
+  openSheet(card => {
+    card.append(el('h2', { textContent: 'Saved files' }),
+      el('p', { textContent: err || (items.length ? 'Trial and session zips kept in this browser until you delete them.' : 'Nothing saved yet. Trials are saved here when they end, sessions when you quit.') }));
+    for (const it of items) {
+      const dl = el('button', { textContent: 'Download' });
+      dl.addEventListener('click', () => saveBlob(it.blob, it.name));
+      const del = el('button', { textContent: 'Delete' });
+      del.addEventListener('click', async () => {
+        if (!window.confirm(`Delete ${it.name} from this browser?`)) return;
+        try { await Store.del(it.id); } catch (e) {}
+        showFiles();
+      });
+      const info = el('span', {}, it.name, el('br'), el('small', { textContent: `${new Date(it.created).toLocaleString()} · ${(it.size / 1e6).toFixed(1)} MB` }));
+      card.append(el('div', { className: 'frow' }, info, dl, del));
+    }
+    const bc = el('button', { className: 'btn2', textContent: 'Close' });
+    bc.addEventListener('click', closeSheet);
+    card.append(bc);
+  });
+}
+
+/* ---- events */
+$('btn-connect').addEventListener('click', connectClick);
+$('btn-demo').addEventListener('click', () => startApp(Object.assign(startOpts(), { demo: true })));
+$('btn-files').addEventListener('click', showFiles);
+$('menu-btn').addEventListener('click', () => { if (app) app.toggle_menu(); });
+$('menu-x').addEventListener('click', () => { if (app) app.toggle_menu(); });
+$('rate').addEventListener('click', e => { const b = e.target.closest('button[data-r]'); if (b && app && app.rating) app.give_rating(+b.dataset.r); });
+$('banner-dl').addEventListener('click', () => { if (app && app.banner) saveBlob(app.banner.blob, app.banner.name); });
+$('banner-x').addEventListener('click', () => { ui.banner.classList.add('hidden'); });
+$('sheet').addEventListener('click', e => { if (e.target.id === 'sheet') closeSheet(); });
+$('file-in').addEventListener('change', async e => {
+  const f = e.target.files && e.target.files[0];
+  if (!f || !app) return;
+  const text = await f.text();
+  app.start_trial(text, f.name, f.name);
+});
+document.addEventListener('pointerdown', initAudio, { passive: true });
+document.addEventListener('keydown', e => {
+  if (e.target && (e.target.tagName === 'INPUT' || e.target.tagName === 'SELECT' || e.target.tagName === 'TEXTAREA')) return;
+  if (e.key === 'Escape') { closeSheet(); return; }
+  if (!app || e.metaKey || e.ctrlKey || e.altKey) return;
+  if (!$('sheet').classList.contains('hidden')) return;
+  const k = e.key;
+  if (k === 'Tab') { e.preventDefault(); app.toggle_menu(); return; }
+  if (k >= '1' && k <= '6') { app.digit(+k); return; }
+  const acts = { u: () => app.toggle_units(), b: () => app.cycle_bg(), n: () => app.trial_key(),
+                 j: () => app.start_wizard('jaw'), s: () => app.start_wizard('shoulder'), m: () => app.toggle_mute(),
+                 r: () => app.rate_prompt(), o: () => app.add_note(), v: () => app.toggle_raw(), q: () => app.quit() };
+  if (acts[k]) { e.preventDefault(); acts[k](); }
+});
+document.addEventListener('visibilitychange', () => {
+  if (!app || app.closed) return;
+  app.event(document.visibilityState === 'visible' ? 'page visible' : 'page hidden (the browser may pause timers and Bluetooth)');
+  if (document.visibilityState === 'visible') app.wake();
+});
+window.addEventListener('beforeunload', e => { if (app && !app.closed) { e.preventDefault(); e.returnValue = ''; } });
+if (!navigator.bluetooth) {
+  $('btn-connect').disabled = true;
+  $('start-msg').innerHTML = 'Web Bluetooth isn\'t available in this browser. On iOS open this page in <b>Bluefy</b>; on a computer use Chrome or Edge. Demo mode works anywhere.';
+}
+</script>
+</body>
+</html>
